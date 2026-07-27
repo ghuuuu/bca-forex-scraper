@@ -204,6 +204,28 @@ the image**, so new files on the NAS change nothing until the image is rebuilt.
 That is why a plain `up -d`, or copying files and restarting, appears to do
 nothing.
 
+**`error: Your local changes to the following files would be overwritten by merge`**
+
+— when you have not changed anything. Check the diff:
+
+```bash
+sudo git diff --stat
+```
+
+Every file listed with **0 insertions and 0 deletions**, binaries unchanged in
+size, means the difference is file *modes*, not content. Synology shared folders
+apply ACLs that report everything as `0777`, so git sees the executable bit set
+on files the index records as `100644`. (`deploy.sh` is committed `100755`, so it
+matches and is conspicuously absent from that list — the giveaway.)
+
+```bash
+sudo git config core.fileMode false
+```
+
+`deploy.sh` now sets this itself, so it should only ever bite once. `reset
+--hard` also appears to fix it and does not: nothing was modified to begin with,
+and the tree dirties itself again on the next checkout.
+
 **`fatal: bad object refs/heads/@eaDir/main@SynoEAStream`**
 
 DSM's indexing service scatters `@eaDir` metadata folders through anything
