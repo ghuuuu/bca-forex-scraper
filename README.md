@@ -146,8 +146,9 @@ double-clicks it.
   still scrolls the page, so the chart does not hijack the phone.
 - **Ranges** 1D / 1W / 1M / 3M / 1Y / ALL, greyed out until there is history
   behind them.
-- **Gaps stay gaps.** If the scraper was down, the line breaks rather than
-  drawing a smooth move across hours nobody observed.
+- **Gaps stay gaps.** If the scraper was down, the span is shaded grey and the
+  line becomes a grey dotted bridge across it — so the outage reads as an
+  outage, not as a real move the scraper never observed.
 - **Bank Notes disables itself** for currencies BCA quotes as `0.00`.
 
 Options: `--currency USD` for one code, `--limit N` to cap points per currency,
