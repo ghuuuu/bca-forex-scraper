@@ -130,12 +130,15 @@ double-clicks it.
 - **Headline picker.** The big number defaults to **e-Rate sell** — what you pay
   to buy foreign currency — and the dropdown swaps it to any of the six
   series/side combinations. High, low and change follow whichever side you pick.
-- **Compare two currencies.** Side by side above 940px, stacked below, so a
-  phone gets two readable charts instead of two cramped ones. Defaults to USD
-  and CNH. Metric, series and range stay shared across both panels — two
-  currencies are only comparable if they are being read the same way — and the
-  crosshair is synced by timestamp, so hovering one marks the same moment on
-  the other.
+- **Two charts.** A second panel for another currency, defaulting to USD and
+  CNH. Side by side once the window is wide enough for a half-width panel to
+  hold the whole stats table, stacked below that — two cramped charts read
+  worse than two full-width ones. Metric, series and range stay shared across
+  both panels, so the two are read the same way, and the crosshair is synced by
+  timestamp: hovering one marks the same moment on the other.
+- **It keeps itself current.** The page refetches its own payload shortly after
+  each scrape slot and re-renders in place, so a screen left open does not go
+  stale. Selections survive — it swaps the data, it does not reload.
 - **Every currency in one file.** Switch with the dropdown; no rebuild needed.
   Scales differ by a factor of 2000 (KRW ≈ 12 IDR, CHF ≈ 22 000), so they get
   one chart each rather than one unreadable chart together.
