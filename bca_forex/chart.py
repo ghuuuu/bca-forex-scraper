@@ -32,7 +32,6 @@ SERIES: tuple[tuple[str, str, str, str], ...] = (
     ("bank_notes", "Bank Notes", "bank_notes_buy", "bank_notes_sell"),
 )
 
-
 #: Raster formats we will inline, and what to call them in the data URI.
 _IMAGE_MIME = {
     ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
@@ -204,7 +203,7 @@ TEMPLATE = r"""<!DOCTYPE html>
     font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     font-variant-numeric: tabular-nums; -webkit-font-smoothing: antialiased;
   }
-  .wrap { max-width: 1180px; margin: 0 auto; padding: 14px; display: flex; flex-direction: column; gap: 12px; }
+  .wrap { max-width: 1420px; margin: 0 auto; padding: 14px; display: flex; flex-direction: column; gap: 12px; }
 
   header.brand {
     display: flex; align-items: center; gap: 13px;
@@ -234,19 +233,28 @@ TEMPLATE = r"""<!DOCTYPE html>
   }
   header.brand a.src:hover { color: var(--text); border-color: #38455e; }
 
-  .top { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 14px 20px; }
-  select.cur {
+  select, button { font-family: inherit; }
+  select.sel {
     background: var(--panel-2); color: var(--text); border: 1px solid var(--line);
-    border-radius: 8px; padding: 9px 12px; font: 600 15px/1 inherit; letter-spacing: .04em;
-    min-width: 108px; cursor: pointer;
+    border-radius: 8px; padding: 8px 11px; font: 600 13px/1 inherit; cursor: pointer;
   }
-  select.cur:focus { outline: 2px solid #2f6fed; outline-offset: 1px; }
-  .quote { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
-  .price { font-size: 30px; font-weight: 650; letter-spacing: -.5px; line-height: 1; }
-  .chg { font-size: 14px; font-weight: 600; }
-  .up { color: var(--up); } .down { color: var(--down); } .flat { color: var(--muted); }
-  .sub { color: var(--muted); font-size: 12px; }
-  .sub b { color: #b9c4d6; font-weight: 600; }
+  select.sel:focus { outline: 2px solid #2f6fed; outline-offset: 1px; }
+  select.cur { font-size: 15px; letter-spacing: .04em; padding: 9px 12px; min-width: 104px; }
+
+  /* Global controls: everything here applies to every panel at once, which is
+     the whole point of compare mode — two currencies are only comparable if
+     they are on the same metric, the same series and the same range. */
+  .globals { display: flex; flex-wrap: wrap; align-items: center; gap: 9px 14px; }
+  .field { display: flex; align-items: center; gap: 8px; }
+  .field > span { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; font-weight: 600; }
+  button.pill {
+    background: var(--panel); border: 1px solid var(--line); color: var(--muted);
+    border-radius: 999px; padding: 8px 15px; font: 600 12.5px/1 inherit; cursor: pointer;
+  }
+  button.pill:hover { border-color: #38455e; color: var(--text); }
+  button.pill.on { background: var(--panel-2); border-color: #38455e; color: var(--text); }
+  button.pill .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #3d4a63; margin-right: 7px; vertical-align: middle; }
+  button.pill.on .dot { background: var(--up); }
 
   .controls { display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between; align-items: center; }
   .toggles { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -274,20 +282,39 @@ TEMPLATE = r"""<!DOCTYPE html>
   .ranges button.on { background: #2b3547; color: #fff; }
   .ranges button:disabled { opacity: .3; cursor: not-allowed; }
 
-  .chartbox { position: relative; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 4px; }
-  #chart { display: block; width: 100%; height: 62vh; min-height: 340px; max-height: 620px; touch-action: pan-y; }
-  #chart text { fill: var(--muted); font-size: 11px; }
+  /* One column by default. Two only when there is genuinely room for two —
+     side-by-side charts narrower than this are worse than stacked ones. */
+  .panels { display: grid; grid-template-columns: 1fr; gap: 14px; }
+  @media (min-width: 940px) { .panels.compare { grid-template-columns: 1fr 1fr; } }
+
+  .panel { display: flex; flex-direction: column; gap: 11px; min-width: 0; }
+  .panel .top { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; }
+  .quote { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .price { font-size: 29px; font-weight: 650; letter-spacing: -.5px; line-height: 1; }
+  .chg { font-size: 13.5px; font-weight: 600; }
+  .up { color: var(--up); } .down { color: var(--down); } .flat { color: var(--muted); }
+  .sub { color: var(--muted); font-size: 11.5px; }
+  .sub b { color: #b9c4d6; font-weight: 600; }
+
+  /* overflow:hidden is load-bearing: the tooltip is absolutely positioned, and
+     without this a stale offset could extend the page's scroll width and give
+     the whole document a horizontal scrollbar. */
+  .chartbox { position: relative; overflow: hidden; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 4px; }
+  .chart { display: block; width: 100%; height: 60vh; min-height: 330px; max-height: 600px; touch-action: pan-y; }
+  .panels.compare .chart { height: 46vh; min-height: 280px; max-height: 460px; }
+  .chart text { fill: var(--muted); font-size: 11px; }
   .notice {
     position: absolute; inset: auto 0 0 0; margin: 0 auto 14px; width: max-content; max-width: 92%;
     background: rgba(30,38,54,.94); border: 1px solid var(--line); color: var(--muted);
     padding: 7px 13px; border-radius: 8px; font-size: 12px; text-align: center;
   }
   .tip {
-    position: absolute; pointer-events: none; opacity: 0; transition: opacity .09s;
+    position: absolute; pointer-events: none; opacity: 0; visibility: hidden;
+    transition: opacity .09s; max-width: calc(100% - 12px);
     background: rgba(13,17,26,.97); border: 1px solid #2c3648; border-radius: 9px;
     padding: 9px 11px; min-width: 190px; box-shadow: 0 10px 28px rgba(0,0,0,.55); z-index: 5;
   }
-  .tip.show { opacity: 1; }
+  .tip.show { opacity: 1; visibility: visible; }
   .tip .when { color: var(--muted); font-size: 11px; margin-bottom: 7px; }
   .tip .grp { margin-top: 7px; }
   .tip .grp:first-of-type { margin-top: 0; }
@@ -296,6 +323,7 @@ TEMPLATE = r"""<!DOCTYPE html>
   .tip .kv { display: flex; justify-content: space-between; gap: 18px; font-size: 12px; }
   .tip .kv span:first-child { color: var(--muted); }
   .tip .kv.sp span:last-child { color: #b9c4d6; }
+  .tip .kv.pick span { color: #fff; font-weight: 700; }
 
   .stats { width: 100%; border-collapse: collapse; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
   .stats th, .stats td { padding: 9px 12px; text-align: right; white-space: nowrap; }
@@ -308,9 +336,9 @@ TEMPLATE = r"""<!DOCTYPE html>
 
   footer { color: var(--muted); font-size: 11.5px; display: flex; flex-wrap: wrap; gap: 6px 16px; }
   .warn { color: #fbbf24; }
-  /* Phones. The controls are the part that breaks first: three pills and six
-     range buttons cannot sit on one 360px line, so each row gets the full width
-     and the ranges spread across it instead of wrapping raggedly. */
+
+  /* Phones. The controls break first: three pills and six range buttons cannot
+     share one 360px line, so each row takes the full width instead. */
   @media (max-width: 620px) {
     .wrap { padding: 11px; gap: 11px; }
     header.brand { gap: 10px; padding-bottom: 10px; }
@@ -320,10 +348,15 @@ TEMPLATE = r"""<!DOCTYPE html>
     header.brand .t { font-size: 14.5px; }
     header.brand a.src { display: none; }
 
-    .top { align-items: center; gap: 10px 14px; }
-    .price { font-size: 24px; }
+    .globals { gap: 8px; }
+    .globals .field { flex: 1; min-width: 0; }
+    .globals select.sel { flex: 1; min-width: 0; }
+    button.pill { flex: none; }
+
+    .panel .top { align-items: center; gap: 9px 13px; }
+    .price { font-size: 23px; }
     .chg { font-size: 12.5px; }
-    select.cur { padding: 8px 10px; font-size: 14px; min-width: 92px; }
+    select.cur { padding: 8px 10px; font-size: 14px; min-width: 88px; }
 
     .controls { flex-direction: column; align-items: stretch; gap: 9px; }
     .toggles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
@@ -332,20 +365,21 @@ TEMPLATE = r"""<!DOCTYPE html>
     .ranges { justify-content: space-between; }
     .ranges button { flex: 1; padding: 9px 4px; }
 
-    #chart { height: 46vh; min-height: 280px; }
+    .chart { height: 44vh; min-height: 270px; }
+    /* Stacked on a phone, so both charts have to fit a thumb-scroll apart. */
+    .panels.compare .chart { height: 36vh; min-height: 230px; }
     .stats th, .stats td { padding: 8px 9px; font-size: 12px; }
     .tip { min-width: 168px; padding: 8px 10px; }
   }
 
-  /* Very narrow phones: the series names are what has to give, not the numbers. */
   @media (max-width: 380px) {
     .tg span:last-child { font-size: 11px; }
-    .price { font-size: 21px; }
+    .price { font-size: 20px; }
   }
 
-  /* Landscape phone — almost no vertical room, so stop the chart eating it. */
   @media (max-height: 480px) and (orientation: landscape) {
-    #chart { height: 62vh; min-height: 200px; }
+    .chart { height: 62vh; min-height: 200px; }
+    .panels.compare .chart { height: 58vh; min-height: 180px; }
   }
 </style>
 </head>
@@ -361,18 +395,12 @@ TEMPLATE = r"""<!DOCTYPE html>
     <a class="src" href="https://www.bca.co.id/id/informasi/kurs" target="_blank" rel="noopener noreferrer">Source &#8599;</a>
   </header>
 
-  <div class="top">
-    <div>
-      <div class="sub" style="margin-bottom:5px">CURRENCY / IDR</div>
-      <select class="cur" id="cur"></select>
-    </div>
-    <div style="flex:1">
-      <div class="quote">
-        <span class="price" id="price">—</span>
-        <span class="chg" id="chg"></span>
-      </div>
-      <div class="sub" id="quoteSub"></div>
-    </div>
+  <div class="globals">
+    <label class="field">
+      <span>Headline</span>
+      <select class="sel" id="metric"></select>
+    </label>
+    <button class="pill" id="cmp"><span class="dot"></span>Compare two</button>
   </div>
 
   <div class="controls">
@@ -380,21 +408,7 @@ TEMPLATE = r"""<!DOCTYPE html>
     <div class="ranges" id="ranges"></div>
   </div>
 
-  <div class="chartbox">
-    <svg id="chart"></svg>
-    <div class="tip" id="tip"></div>
-    <div class="notice" id="notice" hidden></div>
-  </div>
-
-  <div class="scroller">
-    <table class="stats">
-      <thead><tr>
-        <th>Series</th><th>Buy</th><th>Sell</th><th>Spread</th><th>Spread %</th>
-        <th>High</th><th>Low</th><th>Change</th>
-      </tr></thead>
-      <tbody id="statsBody"></tbody>
-    </table>
-  </div>
+  <div class="panels" id="panels"></div>
 
   <footer>
     <span id="cov"></span>
@@ -414,6 +428,7 @@ const RANGES = [
   { k: "3M", s: 7776000 }, { k: "1Y", s: 31536000 }, { k: "ALL", s: Infinity },
 ];
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const SIDES = ["Buy", "Sell"];
 
 const nf = new Intl.NumberFormat("id-ID", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmt = v => (v == null || !isFinite(v)) ? "—" : nf.format(v);
@@ -424,7 +439,7 @@ const fmt = v => (v == null || !isFinite(v)) ? "—" : nf.format(v);
 function wibParts(ts) {
   const d = new Date((ts + 7 * 3600) * 1000);
   return { y: d.getUTCFullYear(), mo: d.getUTCMonth(), d: d.getUTCDate(),
-           h: d.getUTCHours(), mi: d.getUTCMinutes(), s: d.getUTCSeconds() };
+           h: d.getUTCHours(), mi: d.getUTCMinutes() };
 }
 const p2 = n => String(n).padStart(2, "0");
 const fmtTime = ts => { const p = wibParts(ts); return p2(p.h) + ":" + p2(p.mi); };
@@ -433,24 +448,31 @@ const fmtFull = ts => { const p = wibParts(ts);
   return p.d + " " + MONTHS[p.mo] + " " + p.y + ", " + p2(p.h) + ":" + p2(p.mi) + " WIB"; };
 
 const el = id => document.getElementById(id);
-const svg = el("chart"), tip = el("tip"), notice = el("notice");
 
+// Metric, series and range are global on purpose: two currencies side by side
+// only mean anything if they are being read the same way.
 const state = {
-  cur: null,
   range: "ALL",
   on: Object.fromEntries(DATA.series.map(s => [s.key, true])),
-  hover: -1,
-  view: null,
+  metric: { key: "e_rate", side: 1 },   // side 0 = buy, 1 = sell
+  compare: false,
+  hoverT: null,      // hover is shared by TIME, so both panels track together
+  tipOwner: null,    // ...but only the panel under the pointer shows a tooltip
 };
+
+const panels = [];
 
 /* ---------- data selection ------------------------------------------------ */
 
-// Which series this currency actually carries. Bank Notes is missing entirely
-// for the currencies BCA does not deal in cash, so the control is disabled
-// rather than silently drawing nothing.
+// Which series a currency actually carries. Bank Notes is missing entirely for
+// the currencies BCA does not deal in cash, so its control is disabled rather
+// than silently drawing nothing.
 function availableSeries(cur) {
   const rec = DATA.data[cur] || {};
   return DATA.series.filter(s => Array.isArray(rec[s.key]));
+}
+function activeSeries(cur) {
+  return availableSeries(cur).filter(s => state.on[s.key]);
 }
 
 function visibleIndices(cur, range) {
@@ -466,12 +488,6 @@ function visibleIndices(cur, range) {
   return out;
 }
 
-function activeSeries(cur) {
-  return availableSeries(cur).filter(s => state.on[s.key]);
-}
-
-/* ---------- scales -------------------------------------------------------- */
-
 function niceTicks(min, max, count) {
   const span = (max - min) || Math.abs(max) || 1;
   const raw = span / count;
@@ -483,281 +499,380 @@ function niceTicks(min, max, count) {
   return out;
 }
 
-/* ---------- rendering ----------------------------------------------------- */
+/* ---------- one chart panel ----------------------------------------------- */
 
-function render() {
-  const cur = state.cur, rec = DATA.data[cur];
-  const idx = visibleIndices(cur, state.range);
-  const series = activeSeries(cur);
-  const W = svg.clientWidth || 900, H = svg.clientHeight || 400;
-  const M = { t: 14, r: 66, b: 26, l: 10 };
-  const iw = Math.max(10, W - M.l - M.r), ih = Math.max(10, H - M.t - M.b);
+const PANEL_HTML = `
+  <div class="top">
+    <select class="sel cur"></select>
+    <div style="flex:1;min-width:0">
+      <div class="quote"><span class="price">—</span><span class="chg"></span></div>
+      <div class="sub"></div>
+    </div>
+  </div>
+  <div class="chartbox">
+    <svg class="chart"></svg>
+    <div class="tip"></div>
+    <div class="notice" hidden></div>
+  </div>
+  <div class="scroller">
+    <table class="stats">
+      <thead><tr>
+        <th>Series</th><th>Buy</th><th>Sell</th><th>Spread</th><th>Spread %</th>
+        <th>High</th><th>Low</th><th>Change</th>
+      </tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>`;
 
-  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
-  svg.setAttribute("width", W); svg.setAttribute("height", H);
+function makePanel(code) {
+  const root = document.createElement("section");
+  root.className = "panel";
+  root.innerHTML = PANEL_HTML;
+  const q = s => root.querySelector(s);
+  const svg = q(".chart"), tip = q(".tip"), notice = q(".notice"), sel = q("select.cur");
+  const priceEl = q(".price"), chgEl = q(".chg"), subEl = q(".sub"), body = q("tbody");
+  let cur = code, view = null;
 
-  if (!rec || !idx.length || !series.length) {
-    svg.innerHTML = `<text x="${W / 2}" y="${H / 2}" text-anchor="middle">${
-      !series.length ? "No series selected" : "No data for this currency"}</text>`;
-    state.view = null;
-    notice.hidden = true;
-    renderStats([], []);
-    return;
-  }
+  sel.innerHTML = DATA.currencies.map(c => `<option>${c}</option>`).join("");
+  sel.value = cur;
+  sel.addEventListener("change", () => { cur = sel.value; syncControls(); renderAll(); });
 
-  // y domain across every enabled series in view
-  let lo = Infinity, hi = -Infinity;
-  for (const s of series) for (const arm of rec[s.key]) for (const i of idx) {
-    const v = arm[i];
-    if (v != null) { if (v < lo) lo = v; if (v > hi) hi = v; }
-  }
-  if (!isFinite(lo)) { lo = 0; hi = 1; }
-  if (hi - lo < Math.max(hi * 1e-6, 1e-9)) { const p = Math.abs(hi) * 0.002 || 1; lo -= p; hi += p; }
-  const pad = (hi - lo) * 0.10; lo -= pad; hi += pad;
-
-  const t = rec.t;
-  const t0 = t[idx[0]], t1 = t[idx[idx.length - 1]];
-  const xOf = i => idx.length === 1 ? M.l + iw / 2
-    : M.l + (t1 === t0 ? (idx.indexOf(i) / (idx.length - 1)) : (t[i] - t0) / (t1 - t0)) * iw;
-  const yOf = v => M.t + (1 - (v - lo) / (hi - lo)) * ih;
-
-  const parts = [];
-
-  // grid + price axis (right, the way a trading terminal puts it)
-  for (const v of niceTicks(lo, hi, Math.max(3, Math.min(8, Math.round(ih / 54))))) {
-    const y = yOf(v);
-    if (y < M.t - 1 || y > M.t + ih + 1) continue;
-    parts.push(`<line x1="${M.l}" y1="${y.toFixed(1)}" x2="${M.l + iw}" y2="${y.toFixed(1)}" stroke="#1c2433"/>`);
-    parts.push(`<text x="${M.l + iw + 8}" y="${(y + 3.5).toFixed(1)}">${fmt(v)}</text>`);
-  }
-
-  // time axis — label density follows width, format follows span
-  const spanSec = t1 - t0;
-  const want = Math.max(2, Math.min(7, Math.floor(iw / 108)));
-  const step = Math.max(1, Math.floor((idx.length - 1) / (want - 1)) || 1);
-  const label = spanSec > 86400 * 2 ? fmtDay : fmtTime;
-  const seen = new Set();
-  for (let k = 0; k < idx.length; k += step) {
-    const i = idx[k], x = xOf(i), txt = label(t[i]);
-    if (seen.has(txt) && idx.length > 2) continue;
-    seen.add(txt);
-    const anchor = x < M.l + 26 ? "start" : x > M.l + iw - 26 ? "end" : "middle";
-    parts.push(`<line x1="${x.toFixed(1)}" y1="${M.t + ih}" x2="${x.toFixed(1)}" y2="${M.t + ih + 4}" stroke="#2a3345"/>`);
-    parts.push(`<text x="${x.toFixed(1)}" y="${M.t + ih + 17}" text-anchor="${anchor}">${txt}</text>`);
-  }
-
-  // A missing scrape leaves no row at all, so an outage shows up as a jump in
-  // time rather than a null. Anything well past the normal cadence gets treated
-  // as a break: drawing through it would invent a smooth move across hours the
-  // scraper never actually observed.
-  const deltas = [];
-  for (let k = 1; k < idx.length; k++) deltas.push(t[idx[k]] - t[idx[k - 1]]);
-  deltas.sort((a, b) => a - b);
-  const cadence = deltas.length ? deltas[Math.floor(deltas.length / 2)] : 0;
-  const gapLimit = cadence > 0 ? cadence * 3 : Infinity;
-
-  // one band per series: buy above/below sell, the gap between them shaded
-  const dots = idx.length <= 60;
-  for (const s of series) {
-    const [buy, sell] = rec[s.key], c = COLORS[s.key];
-    // contiguous runs only — a gap in the history must break the line, not
-    // interpolate across an outage as though rates had been observed
-    let run = [];
-    const flush = () => {
-      if (run.length > 1) {
-        const up = run.map(i => `${xOf(i).toFixed(1)},${yOf(buy[i]).toFixed(1)}`);
-        const dn = run.slice().reverse().map(i => `${xOf(i).toFixed(1)},${yOf(sell[i]).toFixed(1)}`);
-        parts.push(`<path d="M${up.join("L")}L${dn.join("L")}Z" fill="${c}" fill-opacity=".11"/>`);
-        parts.push(`<path d="M${up.join("L")}" fill="none" stroke="${c}" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>`);
-        parts.push(`<path d="M${run.map(i => `${xOf(i).toFixed(1)},${yOf(sell[i]).toFixed(1)}`).join("L")}" fill="none" stroke="${c}" stroke-width="1.5" stroke-dasharray="5 3.5" stroke-linecap="round"/>`);
-      }
-      if (dots) for (const i of run) {
-        parts.push(`<circle cx="${xOf(i).toFixed(1)}" cy="${yOf(buy[i]).toFixed(1)}" r="2.8" fill="${c}"/>`);
-        parts.push(`<circle cx="${xOf(i).toFixed(1)}" cy="${yOf(sell[i]).toFixed(1)}" r="2.8" fill="${c}" fill-opacity=".45" stroke="${c}" stroke-width="1"/>`);
-      }
-      run = [];
-    };
-    for (const i of idx) {
-      if (buy[i] == null || sell[i] == null) { flush(); continue; }
-      if (run.length && t[i] - t[run[run.length - 1]] > gapLimit) flush();
-      run.push(i);
+  // Hover is stored as a timestamp, not an index, so the second panel lands on
+  // the same moment even if it were ever sampled differently.
+  function hoverIndex() {
+    if (state.hoverT == null) return -1;
+    const t = (DATA.data[cur] || { t: [] }).t;
+    let best = -1, bd = Infinity;
+    for (const i of visibleIndices(cur, state.range)) {
+      const d = Math.abs(t[i] - state.hoverT);
+      if (d < bd) { bd = d; best = i; }
     }
-    flush();
-
-    // last-value flag on the price axis
-    const last = [...idx].reverse().find(i => buy[i] != null);
-    if (last != null) {
-      const y = yOf(buy[last]);
-      parts.push(`<rect x="${M.l + iw + 2}" y="${(y - 8).toFixed(1)}" width="${M.r - 6}" height="16" rx="3" fill="${c}" fill-opacity=".16"/>`);
-      parts.push(`<text x="${M.l + iw + 8}" y="${(y + 3.5).toFixed(1)}" fill="${c}" style="font-weight:700">${fmt(buy[last])}</text>`);
-    }
+    return best;
   }
 
-  // crosshair
-  if (state.hover >= 0 && idx.includes(state.hover)) {
-    const x = xOf(state.hover);
-    parts.push(`<line x1="${x.toFixed(1)}" y1="${M.t}" x2="${x.toFixed(1)}" y2="${M.t + ih}" stroke="#5f6f8c" stroke-dasharray="3 3"/>`);
+  function render() {
+    const rec = DATA.data[cur];
+    const idx = visibleIndices(cur, state.range);
+    const series = activeSeries(cur);
+    const W = svg.clientWidth || 700, H = svg.clientHeight || 380;
+    const M = { t: 14, r: 66, b: 26, l: 10 };
+    const iw = Math.max(10, W - M.l - M.r), ih = Math.max(10, H - M.t - M.b);
+
+    svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+    svg.setAttribute("width", W); svg.setAttribute("height", H);
+
+    if (!rec || !idx.length || !series.length) {
+      svg.innerHTML = `<text x="${W / 2}" y="${H / 2}" text-anchor="middle">${
+        !series.length ? "No series selected" : "No data for this currency"}</text>`;
+      view = null; notice.hidden = true;
+      renderQuote([]); renderStats([], []);
+      return;
+    }
+
+    let lo = Infinity, hi = -Infinity;
+    for (const s of series) for (const arm of rec[s.key]) for (const i of idx) {
+      const v = arm[i];
+      if (v != null) { if (v < lo) lo = v; if (v > hi) hi = v; }
+    }
+    if (!isFinite(lo)) { lo = 0; hi = 1; }
+    if (hi - lo < Math.max(hi * 1e-6, 1e-9)) { const p = Math.abs(hi) * 0.002 || 1; lo -= p; hi += p; }
+    const pad = (hi - lo) * 0.10; lo -= pad; hi += pad;
+
+    const t = rec.t;
+    const t0 = t[idx[0]], t1 = t[idx[idx.length - 1]];
+    const xOf = i => idx.length === 1 ? M.l + iw / 2
+      : M.l + (t1 === t0 ? (idx.indexOf(i) / (idx.length - 1)) : (t[i] - t0) / (t1 - t0)) * iw;
+    const yOf = v => M.t + (1 - (v - lo) / (hi - lo)) * ih;
+
+    const parts = [];
+
+    for (const v of niceTicks(lo, hi, Math.max(3, Math.min(8, Math.round(ih / 54))))) {
+      const y = yOf(v);
+      if (y < M.t - 1 || y > M.t + ih + 1) continue;
+      parts.push(`<line x1="${M.l}" y1="${y.toFixed(1)}" x2="${M.l + iw}" y2="${y.toFixed(1)}" stroke="#1c2433"/>`);
+      parts.push(`<text x="${M.l + iw + 8}" y="${(y + 3.5).toFixed(1)}">${fmt(v)}</text>`);
+    }
+
+    const spanSec = t1 - t0;
+    const want = Math.max(2, Math.min(7, Math.floor(iw / 108)));
+    const step = Math.max(1, Math.floor((idx.length - 1) / (want - 1)) || 1);
+    const label = spanSec > 86400 * 2 ? fmtDay : fmtTime;
+    const seen = new Set();
+    for (let k = 0; k < idx.length; k += step) {
+      const i = idx[k], x = xOf(i), txt = label(t[i]);
+      if (seen.has(txt) && idx.length > 2) continue;
+      seen.add(txt);
+      const anchor = x < M.l + 26 ? "start" : x > M.l + iw - 26 ? "end" : "middle";
+      parts.push(`<line x1="${x.toFixed(1)}" y1="${M.t + ih}" x2="${x.toFixed(1)}" y2="${M.t + ih + 4}" stroke="#2a3345"/>`);
+      parts.push(`<text x="${x.toFixed(1)}" y="${M.t + ih + 17}" text-anchor="${anchor}">${txt}</text>`);
+    }
+
+    // A missing scrape leaves no row at all, so an outage shows up as a jump in
+    // time rather than a null. Anything well past the normal cadence gets
+    // treated as a break: drawing through it would invent a smooth move across
+    // hours the scraper never actually observed.
+    const deltas = [];
+    for (let k = 1; k < idx.length; k++) deltas.push(t[idx[k]] - t[idx[k - 1]]);
+    deltas.sort((a, b) => a - b);
+    const cadence = deltas.length ? deltas[Math.floor(deltas.length / 2)] : 0;
+    const gapLimit = cadence > 0 ? cadence * 3 : Infinity;
+
+    const dots = idx.length <= 60;
+    for (const s of series) {
+      const [buy, sell] = rec[s.key], c = COLORS[s.key];
+      let run = [];
+      const flush = () => {
+        if (run.length > 1) {
+          const up = run.map(i => `${xOf(i).toFixed(1)},${yOf(buy[i]).toFixed(1)}`);
+          const dn = run.slice().reverse().map(i => `${xOf(i).toFixed(1)},${yOf(sell[i]).toFixed(1)}`);
+          parts.push(`<path d="M${up.join("L")}L${dn.join("L")}Z" fill="${c}" fill-opacity=".11"/>`);
+          parts.push(`<path d="M${up.join("L")}" fill="none" stroke="${c}" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>`);
+          parts.push(`<path d="M${run.map(i => `${xOf(i).toFixed(1)},${yOf(sell[i]).toFixed(1)}`).join("L")}" fill="none" stroke="${c}" stroke-width="1.5" stroke-dasharray="5 3.5" stroke-linecap="round"/>`);
+        }
+        if (dots) for (const i of run) {
+          parts.push(`<circle cx="${xOf(i).toFixed(1)}" cy="${yOf(buy[i]).toFixed(1)}" r="2.8" fill="${c}"/>`);
+          parts.push(`<circle cx="${xOf(i).toFixed(1)}" cy="${yOf(sell[i]).toFixed(1)}" r="2.8" fill="${c}" fill-opacity=".45" stroke="${c}" stroke-width="1"/>`);
+        }
+        run = [];
+      };
+      for (const i of idx) {
+        if (buy[i] == null || sell[i] == null) { flush(); continue; }
+        if (run.length && t[i] - t[run[run.length - 1]] > gapLimit) flush();
+        run.push(i);
+      }
+      flush();
+
+      // last-value flag on the price axis, for the side being headlined
+      const arm = rec[s.key][state.metric.side];
+      const last = [...idx].reverse().find(i => arm[i] != null);
+      if (last != null) {
+        const y = yOf(arm[last]);
+        parts.push(`<rect x="${M.l + iw + 2}" y="${(y - 8).toFixed(1)}" width="${M.r - 6}" height="16" rx="3" fill="${c}" fill-opacity=".16"/>`);
+        parts.push(`<text x="${M.l + iw + 8}" y="${(y + 3.5).toFixed(1)}" fill="${c}" style="font-weight:700">${fmt(arm[last])}</text>`);
+      }
+    }
+
+    const hv = hoverIndex();
+    if (hv >= 0 && idx.includes(hv)) {
+      const x = xOf(hv);
+      parts.push(`<line x1="${x.toFixed(1)}" y1="${M.t}" x2="${x.toFixed(1)}" y2="${M.t + ih}" stroke="#5f6f8c" stroke-dasharray="3 3"/>`);
+      for (const s of series) {
+        for (const arm of rec[s.key]) {
+          if (arm[hv] != null) parts.push(`<circle cx="${x.toFixed(1)}" cy="${yOf(arm[hv]).toFixed(1)}" r="4" fill="${COLORS[s.key]}" stroke="#0b0e14" stroke-width="1.5"/>`);
+        }
+      }
+    }
+
+    svg.innerHTML = parts.join("");
+    view = { idx, xOf };
+
+    const n = idx.length;
+    notice.hidden = n > 3;
+    if (!notice.hidden) {
+      notice.textContent = n === 1
+        ? "Only one scrape stored — there is no line to draw yet."
+        : `Only ${n} scrapes stored so far — the shape will fill in as history builds.`;
+    }
+
+    renderQuote(idx);
+    renderStats(series, idx);
+  }
+
+  function renderQuote(idx) {
+    const rec = DATA.data[cur];
+    const m = state.metric, meta = DATA.series.find(s => s.key === m.key);
+    const arms = rec && rec[m.key];
+    if (!arms || !idx.length) {
+      priceEl.textContent = "—";
+      chgEl.textContent = ""; chgEl.className = "chg";
+      subEl.innerHTML = arms ? "" : `<b>${meta.label}</b> not offered for ${cur}`;
+      return;
+    }
+    const pick = arms[m.side], other = arms[1 - m.side];
+    const last = [...idx].reverse().find(i => pick[i] != null);
+    const first = idx.find(i => pick[i] != null);
+    priceEl.textContent = last == null ? "—" : fmt(pick[last]);
+
+    if (last != null && first != null && first !== last && pick[first]) {
+      const d = pick[last] - pick[first], pct = (d / pick[first]) * 100;
+      chgEl.textContent = (d > 0 ? "+" : "") + fmt(d) + "  (" + (d > 0 ? "+" : "") + pct.toFixed(2) + "%)";
+      chgEl.className = "chg " + (d > 0 ? "up" : d < 0 ? "down" : "flat");
+    } else {
+      chgEl.textContent = "unchanged over this range";
+      chgEl.className = "chg flat";
+    }
+    const sp = (last != null && other[last] != null) ? Math.abs(other[last] - pick[last]) : null;
+    subEl.innerHTML =
+      `<b>${meta.label} ${SIDES[m.side].toLowerCase()}</b>` +
+      (last == null ? "" : ` &middot; ${SIDES[1 - m.side].toLowerCase()} ${fmt(other[last])}`) +
+      (sp == null ? "" : ` &middot; spread ${fmt(sp)}`) +
+      (last == null ? "" : ` &middot; ${fmtFull(rec.t[last])}`);
+  }
+
+  function renderStats(series, idx) {
+    const rec = DATA.data[cur];
+    if (!series.length) { body.innerHTML = `<tr><td colspan="8" style="color:var(--muted)">Nothing selected.</td></tr>`; return; }
+    body.innerHTML = series.map(s => {
+      const [buy, sell] = rec[s.key];
+      const track = rec[s.key][state.metric.side];   // high/low/change follow the headline side
+      const vals = idx.map(i => track[i]).filter(v => v != null);
+      const last = [...idx].reverse().find(i => track[i] != null);
+      const first = idx.find(i => track[i] != null);
+      const hi = vals.length ? Math.max(...vals) : null, lowv = vals.length ? Math.min(...vals) : null;
+      const b = last == null ? null : buy[last], sv = last == null ? null : sell[last];
+      const sp = (b != null && sv != null) ? sv - b : null;
+      let chg = "—", cls = "flat";
+      if (last != null && first != null && track[first]) {
+        const d = track[last] - track[first];
+        chg = (d > 0 ? "+" : "") + fmt(d) + " (" + (d > 0 ? "+" : "") + ((d / track[first]) * 100).toFixed(2) + "%)";
+        cls = d > 0 ? "up" : d < 0 ? "down" : "flat";
+      }
+      return `<tr>
+        <td><span class="nm"><span class="dot" style="background:${COLORS[s.key]}"></span>${s.label}</span></td>
+        <td>${fmt(b)}</td><td>${fmt(sv)}</td>
+        <td>${fmt(sp)}</td>
+        <td>${sp == null || !b ? "—" : ((sp / b) * 100).toFixed(3) + "%"}</td>
+        <td>${fmt(hi)}</td><td>${fmt(lowv)}</td>
+        <td class="${cls}">${chg}</td>
+      </tr>`;
+    }).join("");
+  }
+
+  function nearestTime(clientX) {
+    if (!view) return null;
+    const box = svg.getBoundingClientRect();
+    const x = clientX - box.left;
+    let best = null, bd = Infinity;
+    for (const i of view.idx) {
+      const d = Math.abs(view.xOf(i) - x);
+      if (d < bd) { bd = d; best = i; }
+    }
+    return best == null ? null : DATA.data[cur].t[best];
+  }
+
+  function showTip(clientX) {
+    const rec = DATA.data[cur], series = activeSeries(cur), i = hoverIndex();
+    if (i < 0 || !series.length) return hideTip();
+    let html = `<div class="when">${fmtFull(rec.t[i])}</div>`;
     for (const s of series) {
       const [buy, sell] = rec[s.key];
-      for (const v of [buy[state.hover], sell[state.hover]]) {
-        if (v != null) parts.push(`<circle cx="${x.toFixed(1)}" cy="${yOf(v).toFixed(1)}" r="4" fill="${COLORS[s.key]}" stroke="#0b0e14" stroke-width="1.5"/>`);
-      }
+      if (buy[i] == null && sell[i] == null) continue;
+      const sp = (buy[i] != null && sell[i] != null) ? sell[i] - buy[i] : null;
+      const hlBuy = s.key === state.metric.key && state.metric.side === 0;
+      const hlSell = s.key === state.metric.key && state.metric.side === 1;
+      html += `<div class="grp">
+        <div class="nm"><span class="dot" style="background:${COLORS[s.key]}"></span>${s.label}</div>
+        <div class="kv${hlBuy ? " pick" : ""}"><span>Buy</span><span>${fmt(buy[i])}</span></div>
+        <div class="kv${hlSell ? " pick" : ""}"><span>Sell</span><span>${fmt(sell[i])}</span></div>
+        <div class="kv sp"><span>Spread</span><span>${fmt(sp)}</span></div>
+      </div>`;
+    }
+    tip.innerHTML = html;
+    tip.classList.add("show");
+    const box = svg.parentElement.getBoundingClientRect();
+    const w = tip.offsetWidth, x = clientX - box.left;
+    tip.style.left = Math.max(6, Math.min(box.width - w - 6, x + 16)) + "px";
+    tip.style.top = "14px";
+  }
+  // Park it back at the origin as well as hiding it. Left where it was, a
+  // tooltip positioned for a wide window keeps that offset after a resize to a
+  // narrow one, and an absolutely positioned box still counts towards layout
+  // even at zero opacity.
+  function hideTip() { tip.classList.remove("show"); tip.style.left = "0px"; }
+
+  svg.addEventListener("mousemove", e => {
+    const ts = nearestTime(e.clientX);
+    if (ts !== state.hoverT) { state.hoverT = ts; state.tipOwner = api; renderAll(); }
+    state.tipOwner = api;
+    showTip(e.clientX);
+  });
+  svg.addEventListener("mouseleave", () => {
+    state.hoverT = null; state.tipOwner = null;
+    panels.forEach(p => p.hideTip());
+    renderAll();
+  });
+
+  // Touch: a tap should still scroll the page, so the crosshair only takes over
+  // after a deliberate hold. Once it has, moves are ours and scrolling stops.
+  let holdTimer = null, holding = false, sx = 0, sy = 0;
+  svg.addEventListener("touchstart", e => {
+    const t0 = e.touches[0]; sx = t0.clientX; sy = t0.clientY;
+    holdTimer = setTimeout(() => {
+      holding = true;
+      svg.style.touchAction = "none";
+      state.hoverT = nearestTime(sx); state.tipOwner = api;
+      renderAll(); showTip(sx);
+      if (navigator.vibrate) navigator.vibrate(8);
+    }, 260);
+  }, { passive: true });
+
+  svg.addEventListener("touchmove", e => {
+    const t0 = e.touches[0];
+    if (!holding) {
+      if (Math.abs(t0.clientY - sy) > 9 || Math.abs(t0.clientX - sx) > 9) clearTimeout(holdTimer);
+      return;
+    }
+    e.preventDefault();
+    const ts = nearestTime(t0.clientX);
+    if (ts !== state.hoverT) { state.hoverT = ts; renderAll(); }
+    showTip(t0.clientX);
+  }, { passive: false });
+
+  function endTouch() {
+    clearTimeout(holdTimer);
+    if (holding) {
+      holding = false; svg.style.touchAction = "pan-y";
+      state.hoverT = null; state.tipOwner = null;
+      panels.forEach(p => p.hideTip());
+      renderAll();
     }
   }
+  svg.addEventListener("touchend", endTouch);
+  svg.addEventListener("touchcancel", endTouch);
 
-  svg.innerHTML = parts.join("");
-  state.view = { idx, xOf, M, iw, ih };
+  const api = {
+    root, render, hideTip,
+    get currency() { return cur; },
+    set currency(v) { cur = v; sel.value = v; },
+  };
+  return api;
+}
 
-  // an honest word about thin history, rather than a chart that looks broken
-  const n = idx.length;
-  notice.hidden = n > 3;
-  if (!notice.hidden) {
-    notice.textContent = n === 1
-      ? "Only one scrape stored — there is no line to draw yet. Leave `run` going and reopen this file."
-      : `Only ${n} scrapes stored so far — the shape will fill in as history builds.`;
+/* ---------- global controls ----------------------------------------------- */
+
+function renderAll() {
+  panels.forEach(p => p.render());
+  if (state.tipOwner) panels.forEach(p => { if (p !== state.tipOwner) p.hideTip(); });
+}
+
+function buildMetric() {
+  const opts = [];
+  for (const s of DATA.series) for (let side = 0; side < 2; side++) {
+    opts.push(`<option value="${s.key}:${side}">${s.label} ${SIDES[side]}</option>`);
   }
-
-  renderQuote(idx);
-  renderStats(series, idx);
+  el("metric").innerHTML = opts.join("");
+  el("metric").value = `${state.metric.key}:${state.metric.side}`;
+  el("metric").addEventListener("change", e => {
+    const [key, side] = e.target.value.split(":");
+    state.metric = { key, side: +side };
+    // headlining a series nobody can see is a dead number, so switch it on
+    if (!state.on[key]) { state.on[key] = true; syncControls(); }
+    renderAll();
+  });
 }
 
-function renderQuote(idx) {
-  const rec = DATA.data[state.cur];
-  const primary = activeSeries(state.cur)[0] || availableSeries(state.cur)[0];
-  if (!primary) { el("price").textContent = "—"; el("chg").textContent = ""; el("quoteSub").textContent = ""; return; }
-  const [buy, sell] = rec[primary.key];
-  const last = [...idx].reverse().find(i => buy[i] != null);
-  const first = idx.find(i => buy[i] != null);
-  el("price").textContent = last == null ? "—" : fmt(buy[last]);
+// A series control is only dead if NONE of the shown currencies carries it —
+// with USD and CNH side by side, Bank Notes still matters to USD.
+function shownCurrencies() { return panels.map(p => p.currency); }
 
-  const chg = el("chg");
-  if (last != null && first != null && first !== last) {
-    const d = buy[last] - buy[first], pct = (d / buy[first]) * 100;
-    chg.textContent = (d > 0 ? "+" : "") + fmt(d) + "  (" + (d > 0 ? "+" : "") + pct.toFixed(2) + "%)";
-    chg.className = "chg " + (d > 0 ? "up" : d < 0 ? "down" : "flat");
-  } else {
-    chg.textContent = "unchanged over this range";
-    chg.className = "chg flat";
-  }
-  const sp = (last != null && sell[last] != null) ? sell[last] - buy[last] : null;
-  el("quoteSub").innerHTML =
-    `<b>${primary.label}</b> buy &middot; sell ${fmt(last == null ? null : sell[last])}` +
-    (sp == null ? "" : ` &middot; spread ${fmt(sp)}`) +
-    (last == null ? "" : ` &middot; ${fmtFull(rec.t[last])}`);
-}
+function syncControls() {
+  const usable = new Set();
+  for (const c of shownCurrencies()) for (const s of availableSeries(c)) usable.add(s.key);
 
-function renderStats(series, idx) {
-  const rec = DATA.data[state.cur], body = el("statsBody");
-  if (!series.length) { body.innerHTML = `<tr><td colspan="8" style="color:var(--muted)">Nothing selected.</td></tr>`; return; }
-  body.innerHTML = series.map(s => {
-    const [buy, sell] = rec[s.key];
-    const vals = idx.map(i => buy[i]).filter(v => v != null);
-    const last = [...idx].reverse().find(i => buy[i] != null);
-    const first = idx.find(i => buy[i] != null);
-    const hi = vals.length ? Math.max(...vals) : null, lowv = vals.length ? Math.min(...vals) : null;
-    const b = last == null ? null : buy[last], sv = last == null ? null : sell[last];
-    const sp = (b != null && sv != null) ? sv - b : null;
-    let chg = "—", cls = "flat";
-    if (last != null && first != null && buy[first]) {
-      const d = buy[last] - buy[first];
-      chg = (d > 0 ? "+" : "") + fmt(d) + " (" + (d > 0 ? "+" : "") + ((d / buy[first]) * 100).toFixed(2) + "%)";
-      cls = d > 0 ? "up" : d < 0 ? "down" : "flat";
-    }
-    return `<tr>
-      <td><span class="nm"><span class="dot" style="background:${COLORS[s.key]}"></span>${s.label}</span></td>
-      <td>${fmt(b)}</td><td>${fmt(sv)}</td>
-      <td>${fmt(sp)}</td>
-      <td>${sp == null || !b ? "—" : ((sp / b) * 100).toFixed(3) + "%"}</td>
-      <td>${fmt(hi)}</td><td>${fmt(lowv)}</td>
-      <td class="${cls}">${chg}</td>
-    </tr>`;
-  }).join("");
-}
-
-/* ---------- crosshair: mouse hover, and press-and-hold on touch ----------- */
-
-function nearest(clientX) {
-  const v = state.view; if (!v) return -1;
-  const box = svg.getBoundingClientRect();
-  const x = clientX - box.left;
-  let best = -1, bd = Infinity;
-  for (const i of v.idx) { const d = Math.abs(v.xOf(i) - x); if (d < bd) { bd = d; best = i; } }
-  return best;
-}
-
-function showTip(i, clientX) {
-  const rec = DATA.data[state.cur], series = activeSeries(state.cur);
-  if (i < 0 || !series.length) return hideTip();
-  let html = `<div class="when">${fmtFull(rec.t[i])}</div>`;
-  for (const s of series) {
-    const [buy, sell] = rec[s.key];
-    if (buy[i] == null && sell[i] == null) continue;
-    const sp = (buy[i] != null && sell[i] != null) ? sell[i] - buy[i] : null;
-    html += `<div class="grp">
-      <div class="nm"><span class="dot" style="background:${COLORS[s.key]}"></span>${s.label}</div>
-      <div class="kv"><span>Buy</span><span>${fmt(buy[i])}</span></div>
-      <div class="kv"><span>Sell</span><span>${fmt(sell[i])}</span></div>
-      <div class="kv sp"><span>Spread</span><span>${fmt(sp)}</span></div>
-    </div>`;
-  }
-  tip.innerHTML = html;
-  tip.classList.add("show");
-  const box = svg.parentElement.getBoundingClientRect();
-  const w = tip.offsetWidth, x = clientX - box.left;
-  tip.style.left = Math.max(6, Math.min(box.width - w - 6, x + 16)) + "px";
-  tip.style.top = "14px";
-}
-function hideTip() { tip.classList.remove("show"); }
-
-svg.addEventListener("mousemove", e => {
-  const i = nearest(e.clientX);
-  if (i !== state.hover) { state.hover = i; render(); }
-  showTip(i, e.clientX);
-});
-svg.addEventListener("mouseleave", () => { state.hover = -1; hideTip(); render(); });
-
-// Touch: a tap should still scroll the page, so the crosshair only takes over
-// after a deliberate hold. Once it has, moves are ours and scrolling stops.
-let holdTimer = null, holding = false, startY = 0, startX = 0;
-svg.addEventListener("touchstart", e => {
-  const tch = e.touches[0]; startX = tch.clientX; startY = tch.clientY;
-  holdTimer = setTimeout(() => {
-    holding = true;
-    svg.style.touchAction = "none";
-    state.hover = nearest(startX); render(); showTip(state.hover, startX);
-    if (navigator.vibrate) navigator.vibrate(8);
-  }, 260);
-}, { passive: true });
-
-svg.addEventListener("touchmove", e => {
-  const tch = e.touches[0];
-  if (!holding) {
-    if (Math.abs(tch.clientY - startY) > 9 || Math.abs(tch.clientX - startX) > 9) {
-      clearTimeout(holdTimer);            // they are scrolling, not inspecting
-    }
-    return;
-  }
-  e.preventDefault();
-  const i = nearest(tch.clientX);
-  if (i !== state.hover) { state.hover = i; render(); }
-  showTip(i, tch.clientX);
-}, { passive: false });
-
-function endTouch() {
-  clearTimeout(holdTimer);
-  if (holding) { holding = false; svg.style.touchAction = "pan-y"; state.hover = -1; hideTip(); render(); }
-}
-svg.addEventListener("touchend", endTouch);
-svg.addEventListener("touchcancel", endTouch);
-
-/* ---------- controls ------------------------------------------------------ */
-
-function buildToggles() {
-  const avail = new Set(availableSeries(state.cur).map(s => s.key));
   el("toggles").innerHTML = DATA.series.map(s => {
-    const has = avail.has(s.key), on = has && state.on[s.key];
+    const has = usable.has(s.key), on = has && state.on[s.key];
     return `<label class="tg ${on ? "on" : ""} ${has ? "" : "off-data"}" data-k="${s.key}"
-              title="${has ? "Show buy and sell for " + s.label : s.label + " is not offered for this currency"}">
+              title="${has ? "Show buy and sell for " + s.label : s.label + " is not offered for the selected currencies"}">
       <input type="checkbox" ${on ? "checked" : ""} ${has ? "" : "disabled"} data-k="${s.key}">
       <span class="sw"></span><span>${s.label}</span>
     </label>`;
@@ -766,37 +881,50 @@ function buildToggles() {
     inp.addEventListener("change", () => {
       state.on[inp.dataset.k] = inp.checked;
       inp.closest(".tg").classList.toggle("on", inp.checked);
-      render();
+      renderAll();
     });
   });
-}
 
-function buildRanges() {
-  const t = (DATA.data[state.cur] || { t: [] }).t;
+  const t = (DATA.data[shownCurrencies()[0]] || { t: [] }).t;
   const span = t.length > 1 ? t[t.length - 1] - t[0] : 0;
   el("ranges").innerHTML = RANGES.map(r => {
-    // a range shorter than the history is always useful; longer ones are only
-    // offered once there is enough history for them to mean anything
-    const usable = r.s === Infinity || span >= r.s * 0.15 || r.s <= 86400;
-    return `<button data-r="${r.k}" class="${state.range === r.k ? "on" : ""}" ${usable ? "" : "disabled"}>${r.k}</button>`;
+    const usableR = r.s === Infinity || span >= r.s * 0.15 || r.s <= 86400;
+    return `<button data-r="${r.k}" class="${state.range === r.k ? "on" : ""}" ${usableR ? "" : "disabled"}>${r.k}</button>`;
   }).join("");
   el("ranges").querySelectorAll("button").forEach(b => {
     b.addEventListener("click", () => {
       state.range = b.dataset.r;
       el("ranges").querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b));
-      state.hover = -1; hideTip(); render();
+      state.hoverT = null; panels.forEach(p => p.hideTip());
+      renderAll();
     });
   });
-}
 
-function setCurrency(code) {
-  state.cur = code;
-  state.hover = -1; hideTip();
-  buildToggles(); buildRanges();
-  const t = DATA.data[code].t;
   el("cov").textContent = `${t.length} scrape${t.length === 1 ? "" : "s"} stored` +
     (t.length ? ` · ${fmtFull(t[0])} → ${fmtFull(t[t.length - 1])}` : "");
-  render();
+}
+
+function pick(preferred, avoid) {
+  if (DATA.currencies.includes(preferred) && preferred !== avoid) return preferred;
+  return DATA.currencies.find(c => c !== avoid) || DATA.currencies[0];
+}
+
+function setCompare(on) {
+  state.compare = on;
+  const host = el("panels");
+  host.classList.toggle("compare", on);
+  el("cmp").classList.toggle("on", on);
+
+  if (on && panels.length === 1) {
+    const second = makePanel(pick("CNH", panels[0].currency));
+    panels.push(second);
+    host.appendChild(second.root);
+  } else if (!on && panels.length === 2) {
+    host.removeChild(panels.pop().root);
+  }
+  state.hoverT = null;
+  syncControls();
+  renderAll();
 }
 
 function init() {
@@ -805,16 +933,24 @@ function init() {
       "<p style='color:#8b97ab'>The database has no rates yet. Run <code>python -m bca_forex once</code> and rebuild this chart.</p>";
     return;
   }
-  el("cur").innerHTML = DATA.currencies.map(c => `<option>${c}</option>`).join("");
-  el("cur").value = DATA.currencies.includes("USD") ? "USD" : DATA.currencies[0];
-  el("cur").addEventListener("change", e => setCurrency(e.target.value));
+  buildMetric();
+
+  const first = makePanel(pick("USD", null));
+  panels.push(first);
+  el("panels").appendChild(first.root);
+
+  el("cmp").addEventListener("click", () => setCompare(!state.compare));
 
   el("stamp").textContent = DATA.pageUpdated ? "· BCA page: " + DATA.pageUpdated : "";
   el("fails").innerHTML = DATA.failedRuns
     ? `· <span class="warn">${DATA.failedRuns} failed scrape${DATA.failedRuns === 1 ? "" : "s"}</span>` : "";
 
-  setCurrency(el("cur").value);
-  addEventListener("resize", () => { hideTip(); state.hover = -1; render(); });
+  syncControls();
+  renderAll();
+  addEventListener("resize", () => {
+    state.hoverT = null; panels.forEach(p => p.hideTip());
+    renderAll();
+  });
 }
 init();
 </script>
