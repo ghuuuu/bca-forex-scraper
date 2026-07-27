@@ -177,7 +177,7 @@ nothing stops being recorded.
    - Path: the folder from step 1
    - Source: **Use existing docker-compose.yml**
 3. **Build** and start it. The first build pulls the Python base image.
-4. Open `http://<nas-ip>:8088/`
+4. Open `http://<nas-ip>:7000/`
 
 **DSM 6.2 / 7.0–7.1 (Docker package)** has no Compose UI. SSH in
 (*Control Panel → Terminal & SNMP → Enable SSH*) and run it by hand:
@@ -221,8 +221,9 @@ No rebuild needed — the image is already built by this point.
 - **`./web` is what gets served, and it holds only the chart.** The database is
   deliberately not mounted into the web container — a static file server would
   hand `bca-forex.sqlite3` to anyone on the LAN who guessed the name.
-- **Port 8088** is the host side; change the left number in
-  `docker-compose.yml` if it clashes. DSM itself uses 5000/5001.
+- **Port 7000** is the host side; change only the left number of `"7000:8080"`
+  in `docker-compose.yml` if it clashes. The right number is internal to the
+  container and must stay 8080. DSM itself uses 5000/5001.
 - **Do not expose this to the internet.** It is `http.server` — no HTTPS, no
   auth, not written to face the open web. Reach it over LAN or your VPN. If you
   want it remote, put it behind DSM's reverse proxy with HTTPS.

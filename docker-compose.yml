@@ -40,9 +40,10 @@ services:
       # anyone on the LAN who guessed the name.
       - ./web:/web:ro
     ports:
-      # host:container — change only the left number if 8088 is already taken
-      # on the NAS (DSM itself uses 5000/5001).
-      - "8088:8080"
+      # host:container — change only the LEFT number to move the port. The right
+      # one is inside the container and must stay 8080 to match the entrypoint
+      # below. DSM itself uses 5000/5001, so avoid those.
+      - "7000:8080"
     # --bind 0.0.0.0 is required: the default binds localhost inside the
     # container, which is unreachable from the NAS.
     entrypoint: ["python", "-m", "http.server", "8080",
