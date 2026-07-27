@@ -1,0 +1,49 @@
+# Two containers off one image: one scrapes, one serves the chart it writes.
+#
+# Splitting them keeps the scraper single-purpose — if the web server falls over
+# nothing stops being recorded, and the history is the part that cannot be
+# reconstructed after the fact.
+#
+# On DSM: Container Manager -> Project -> Create -> upload this file.
+#
+# ./data and ./web must EXIST before this runs. Docker on Synology will not
+# create a missing bind-mount source the way it does on Linux — it refuses to
+# start the container instead:
+#
+#     Bind mount failed: '/volume1/docker/...' does not exists
+#
+# Both ship as empty folders in the repo for exactly this reason. If you copied
+# without them: mkdir -p data web
+
+services:
+  scraper:
+    build: .
+    image: bca-forex:latest
+    container_name: bca-forex-scraper
+    restart: unless-stopped
+    volumes:
+      - ./data:/data     # the database — private
+      - ./web:/web       # only the rendered chart goes here
+    # Written as index.html so the bare host:port URL opens it.
+    command: ["run", "--chart", "/web/index.html"]
+
+  web:
+    build: .
+    image: bca-forex:latest
+    container_name: bca-forex-web
+    restart: unless-stopped
+    depends_on:
+      - scraper
+    volumes:
+      # Only /web, and read-only. The database is deliberately NOT mounted here:
+      # a static file server would happily hand out the whole history file to
+      # anyone on the LAN who guessed the name.
+      - ./web:/web:ro
+    ports:
+      # host:container — change only the left number if 8088 is already taken
+      # on the NAS (DSM itself uses 5000/5001).
+      - "8088:8080"
+    # --bind 0.0.0.0 is required: the default binds localhost inside the
+    # container, which is unreachable from the NAS.
+    entrypoint: ["python", "-m", "http.server", "8080",
+                 "--directory", "/web", "--bind", "0.0.0.0"]

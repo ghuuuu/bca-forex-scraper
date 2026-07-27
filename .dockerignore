@@ -1,0 +1,12 @@
+# The image needs the package and nothing else. Keeping the build context tiny
+# also means a stray local database can never be baked into a shipped image.
+data/
+web/
+tests/
+.claude/
+*.html
+*.bat
+*.md
+.git/
+.gitignore
+**/__pycache__/
