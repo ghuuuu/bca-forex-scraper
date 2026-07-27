@@ -1,0 +1,22 @@
+# The collected history and anything derived from it — machine-local, and it
+# would otherwise grow in the repo forever. Delete this file if you decide the
+# history should travel with the folder.
+# The folders themselves are kept, only their contents are ignored: Docker on
+# Synology refuses to start when a bind-mount source is missing, so `data/` and
+# `web/` have to exist in the copied folder before compose runs.
+data/*
+!data/.gitkeep
+web/*
+!web/.gitkeep
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+*.csv
+
+# Build output — regenerated from the database on demand, ~100 KB of mostly
+# embedded logo, and it would land in every diff. The saved page under
+# tests/fixtures/ is a real input, so this is deliberately root-only.
+/chart.html
+
+__pycache__/
+*.pyc

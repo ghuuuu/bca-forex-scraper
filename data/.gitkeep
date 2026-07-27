@@ -1,0 +1,2 @@
+Keeps this folder present. docker-compose bind-mounts it as /data, and Synology's
+Docker refuses to start a container when the mount source does not exist.

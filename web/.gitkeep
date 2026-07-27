@@ -1,0 +1,3 @@
+Keeps this folder present. The scraper writes index.html here and the web
+container serves it read-only; Synology's Docker refuses to start a container
+when the mount source does not exist.
