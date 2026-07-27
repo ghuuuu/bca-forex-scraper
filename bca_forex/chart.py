@@ -791,11 +791,42 @@ function makePanel(code) {
     const cadence = deltas.length ? deltas[Math.floor(deltas.length / 2)] : 0;
     const gapLimit = cadence > 0 ? cadence * 3 : Infinity;
 
+    // Shade the no-data spans behind everything else. A time gap is the same for
+    // every series — nobody was scraped during an outage — so it is drawn once,
+    // per span, across the full plot height rather than per line.
+    for (let k = 1; k < idx.length; k++) {
+      if (t[idx[k]] - t[idx[k - 1]] > gapLimit) {
+        const x1 = xOf(idx[k - 1]), x2 = xOf(idx[k]);
+        parts.push(`<rect x="${x1.toFixed(1)}" y="${M.t}" width="${(x2 - x1).toFixed(1)}" height="${ih}" fill="#8b97ab" fill-opacity=".05"/>`);
+      }
+    }
+
     const dots = idx.length <= 60;
+    const GAP = "#6b7890";  // grey for the bridge across a gap — clearly not a rate line
     for (const s of series) {
       const [buy, sell] = rec[s.key], c = COLORS[s.key];
+
+      // Break the series into contiguous runs — a run ends on a null or a time
+      // gap — then draw each, and bridge the breaks separately.
+      const runs = [];
       let run = [];
-      const flush = () => {
+      for (const i of idx) {
+        if (buy[i] == null || sell[i] == null) { if (run.length) runs.push(run), run = []; continue; }
+        if (run.length && t[i] - t[run[run.length - 1]] > gapLimit) runs.push(run), run = [];
+        run.push(i);
+      }
+      if (run.length) runs.push(run);
+
+      // A grey dotted line across each break, so the eye follows one series
+      // through the gap without the solid coloured line claiming data is there.
+      for (let r = 1; r < runs.length; r++) {
+        const a = runs[r - 1][runs[r - 1].length - 1], b = runs[r][0];
+        for (const arm of [buy, sell]) {
+          parts.push(`<path d="M${xOf(a).toFixed(1)},${yOf(arm[a]).toFixed(1)}L${xOf(b).toFixed(1)},${yOf(arm[b]).toFixed(1)}" fill="none" stroke="${GAP}" stroke-width="1.3" stroke-dasharray="2 3" stroke-linecap="round"/>`);
+        }
+      }
+
+      for (const run of runs) {
         if (run.length > 1) {
           const up = run.map(i => `${xOf(i).toFixed(1)},${yOf(buy[i]).toFixed(1)}`);
           const dn = run.slice().reverse().map(i => `${xOf(i).toFixed(1)},${yOf(sell[i]).toFixed(1)}`);
@@ -807,14 +838,7 @@ function makePanel(code) {
           parts.push(`<circle cx="${xOf(i).toFixed(1)}" cy="${yOf(buy[i]).toFixed(1)}" r="2.8" fill="${c}"/>`);
           parts.push(`<circle cx="${xOf(i).toFixed(1)}" cy="${yOf(sell[i]).toFixed(1)}" r="2.8" fill="${c}" fill-opacity=".45" stroke="${c}" stroke-width="1"/>`);
         }
-        run = [];
-      };
-      for (const i of idx) {
-        if (buy[i] == null || sell[i] == null) { flush(); continue; }
-        if (run.length && t[i] - t[run[run.length - 1]] > gapLimit) flush();
-        run.push(i);
       }
-      flush();
 
       // last-value flag on the price axis, for the side being headlined
       const arm = rec[s.key][state.metric.side];
