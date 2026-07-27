@@ -40,6 +40,19 @@ mkdir -p data web
 
 if [ -d .git ] && command -v git >/dev/null 2>&1; then
     say "Pulling from GitHub"
+
+    # Synology shared folders carry ACLs that report every file as 0777. Git
+    # reads that as the executable bit being set on every tracked file, marks
+    # the entire tree modified, and then refuses to pull:
+    #
+    #     error: Your local changes to the following files would be overwritten
+    #
+    # The diff is mode-only — every file shows 0 insertions and 0 deletions —
+    # so there is nothing to preserve and nothing to stash. Telling git not to
+    # read permission bits here is the fix, not `reset --hard`, which would
+    # keep looking like it worked while the tree dirtied itself again.
+    git config core.fileMode false
+
     before=$(git rev-parse HEAD)
     # --ff-only so a surprise local edit stops the deploy loudly rather than
     # being silently merged on a box nobody is watching
