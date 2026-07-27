@@ -20,3 +20,10 @@ web/*
 
 __pycache__/
 *.pyc
+
+# Synology's indexing service drops these metadata folders into anything it
+# touches. Left untracked they are only noise, but when one lands inside
+# .git/refs/heads/ git reads it as a ref and every fetch dies with
+# "fatal: bad object refs/heads/@eaDir/main@SynoEAStream".
+@eaDir/
+*@SynoEAStream

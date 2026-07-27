@@ -204,7 +204,20 @@ the image**, so new files on the NAS change nothing until the image is rebuilt.
 That is why a plain `up -d`, or copying files and restarting, appears to do
 nothing.
 
-Two things that bite on Synology, both already handled:
+**`fatal: bad object refs/heads/@eaDir/main@SynoEAStream`**
+
+DSM's indexing service scatters `@eaDir` metadata folders through anything
+copied over SMB. One landing inside `.git/refs/heads/` becomes a ref git cannot
+parse, and every fetch fails. Clear them and retry:
+
+```bash
+sudo find /volume1/docker/bca-forex -name '@eaDir' -prune -exec rm -rf {} +
+sudo git fetch origin && sudo git reset --hard origin/main
+```
+
+They stop coming back once you pull instead of copying over SMB.
+
+Three things that bite on Synology, all already handled:
 
 - **`.sh` files must keep LF endings.** Checked out with CRLF on Windows and
   copied over, the script fails as `bad interpreter: No such file or directory`
