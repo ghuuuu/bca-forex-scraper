@@ -235,6 +235,10 @@ function cacheable(res) {
 self.addEventListener("fetch", e => {
   const req = e.request;
   if (req.method !== "GET") return;
+  // The page's own poll for fresh data carries a cache-busting query. Leave it
+  // entirely alone: it must reach the network, and caching a copy per timestamp
+  // would grow the cache without bound.
+  if (new URL(req.url).search) return;
 
   const isPage = req.mode === "navigate" || new URL(req.url).pathname.endsWith("/");
 
@@ -376,7 +380,7 @@ TEMPLATE = r"""<!DOCTYPE html>
   select.cur { font-size: 15px; letter-spacing: .04em; padding: 9px 12px; min-width: 104px; }
 
   /* Global controls: everything here applies to every panel at once, which is
-     the whole point of compare mode — two currencies are only comparable if
+     the whole point of the second panel — two currencies only line up if
      they are on the same metric, the same series and the same range. */
   .globals { display: flex; flex-wrap: wrap; align-items: center; gap: 9px 14px; }
   .field { display: flex; align-items: center; gap: 8px; }
@@ -419,7 +423,11 @@ TEMPLATE = r"""<!DOCTYPE html>
   /* One column by default. Two only when there is genuinely room for two —
      side-by-side charts narrower than this are worse than stacked ones. */
   .panels { display: grid; grid-template-columns: 1fr; gap: 14px; }
-  @media (min-width: 940px) { .panels.compare { grid-template-columns: 1fr 1fr; } }
+  /* Side by side only once a half-width panel can hold the whole stats table.
+     Below this the columns overflowed and put a scrollbar under every chart —
+     and two cramped charts read worse than two full-width stacked ones, so the
+     threshold is set by what actually fits rather than by a round number. */
+  @media (min-width: 1200px) { .panels.split { grid-template-columns: 1fr 1fr; } }
 
   .panel { display: flex; flex-direction: column; gap: 11px; min-width: 0; }
   .panel .top { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; }
@@ -443,7 +451,7 @@ TEMPLATE = r"""<!DOCTYPE html>
     -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
   }
   .chart.scrubbing { touch-action: none; }
-  .panels.compare .chart { height: 46vh; min-height: 280px; max-height: 460px; }
+  .panels.split .chart { height: 46vh; min-height: 280px; max-height: 460px; }
   .chart text { fill: var(--muted); font-size: 11px; }
   .notice {
     position: absolute; inset: auto 0 0 0; margin: 0 auto 14px; width: max-content; max-width: 92%;
@@ -474,7 +482,18 @@ TEMPLATE = r"""<!DOCTYPE html>
   .stats tbody tr + tr td { border-top: 1px solid #1b2231; }
   .stats .nm { display: flex; align-items: center; gap: 8px; font-weight: 650; }
   .stats .dot { width: 11px; height: 3px; border-radius: 2px; }
-  .scroller { overflow-x: auto; }
+  /* Split view halves the width and the eight-column table stopped fitting,
+     putting a scrollbar across the bottom of the left panel. Tightening the
+     cells buys the width back rather than making the reader drag for it. */
+  .panels.split .stats th, .panels.split .stats td { padding: 7px 6px; font-size: 11.5px; }
+  .panels.split .stats th { letter-spacing: .02em; }
+
+  /* Kept as a fallback for genuinely narrow screens, but slim and dark instead
+     of the platform's default slab. */
+  .scroller { overflow-x: auto; scrollbar-width: thin; scrollbar-color: #2b3547 transparent; }
+  .scroller::-webkit-scrollbar { height: 6px; }
+  .scroller::-webkit-scrollbar-thumb { background: #2b3547; border-radius: 3px; }
+  .scroller::-webkit-scrollbar-track { background: transparent; }
 
   footer { color: var(--muted); font-size: 11.5px; display: flex; flex-wrap: wrap; gap: 6px 16px; }
   .warn { color: #fbbf24; }
@@ -519,7 +538,7 @@ TEMPLATE = r"""<!DOCTYPE html>
 
     .chart { height: 44vh; min-height: 270px; }
     /* Stacked on a phone, so both charts have to fit a thumb-scroll apart. */
-    .panels.compare .chart { height: 36vh; min-height: 230px; }
+    .panels.split .chart { height: 36vh; min-height: 230px; }
     .stats th, .stats td { padding: 8px 9px; font-size: 12px; }
     .tip { min-width: 168px; padding: 8px 10px; }
   }
@@ -531,7 +550,7 @@ TEMPLATE = r"""<!DOCTYPE html>
 
   @media (max-height: 480px) and (orientation: landscape) {
     .chart { height: 62vh; min-height: 200px; }
-    .panels.compare .chart { height: 58vh; min-height: 180px; }
+    .panels.split .chart { height: 58vh; min-height: 180px; }
   }
 </style>
 </head>
@@ -552,7 +571,7 @@ TEMPLATE = r"""<!DOCTYPE html>
       <span>Headline</span>
       <select class="sel" id="metric"></select>
     </label>
-    <button class="pill" id="cmp"><span class="dot"></span>Compare two</button>
+    <button class="pill" id="split"><span class="dot"></span>Two charts</button>
   </div>
 
   <div class="controls">
@@ -573,7 +592,9 @@ TEMPLATE = r"""<!DOCTYPE html>
 
 <script>
 "use strict";
-const DATA = /*__DATA__*/null;
+// `let`, not `const`: the page reloads its own payload on the scrape schedule
+// and swaps this out in place. See pullFresh().
+let DATA = /*__DATA__*/null;
 
 const COLORS = { e_rate: "#38bdf8", tt: "#fbbf24", bank_notes: "#c084fc" };
 const RANGES = [
@@ -608,7 +629,7 @@ const state = {
   range: "ALL",
   on: Object.fromEntries(DATA.series.map(s => [s.key, true])),
   metric: { key: "e_rate", side: 1 },   // side 0 = buy, 1 = sell
-  compare: false,
+  split: false,
   hoverT: null,      // hover is shared by TIME, so both panels track together
   tipOwner: null,    // ...but only the panel under the pointer shows a tooltip
 };
@@ -1109,11 +1130,11 @@ function pick(preferred, avoid) {
   return DATA.currencies.find(c => c !== avoid) || DATA.currencies[0];
 }
 
-function setCompare(on) {
-  state.compare = on;
+function setSplit(on) {
+  state.split = on;
   const host = el("panels");
-  host.classList.toggle("compare", on);
-  el("cmp").classList.toggle("on", on);
+  host.classList.toggle("split", on);
+  el("split").classList.toggle("on", on);
 
   if (on && panels.length === 1) {
     const second = makePanel(pick("CNH", panels[0].currency));
@@ -1125,6 +1146,74 @@ function setCompare(on) {
   state.hoverT = null;
   syncControls();
   renderAll();
+}
+
+/* ---------- keeping itself current ---------------------------------------- *
+ *
+ * The page is a snapshot: the history is baked in as JSON when the scraper
+ * writes it, so without this it shows whatever was true at load and never
+ * moves. Rather than reload — which would throw away the chosen currencies,
+ * range and metric — it refetches itself, lifts the payload back out and
+ * re-renders in place.
+ *
+ * Timed to the scrape slots instead of a blind interval: a poll landing at
+ * :07 finds exactly what the one at :02 already had.
+ */
+const REFRESH_GRACE_MS = 30000;   // let the scrape finish and the file be written
+
+function msToNextSlot() {
+  const now = new Date();
+  // WIB is a whole-hour offset, so quarter-hour boundaries land at the same
+  // instant whatever timezone the viewer's clock is set to.
+  const toQuarter = 15 - (now.getMinutes() % 15);
+  return (toQuarter * 60 - now.getSeconds()) * 1000 - now.getMilliseconds() + REFRESH_GRACE_MS;
+}
+
+function newestStamp(d) {
+  const first = d.currencies[0];
+  const t = first ? d.data[first].t : [];
+  return t.length ? t[t.length - 1] : 0;
+}
+
+async function pullFresh() {
+  const url = location.pathname + "?_=" + Date.now();
+  const res = await fetch(url, { cache: "no-store" });
+  if (!res.ok) return false;
+  const text = await res.text();
+  const m = text.match(/let DATA = (\{[\s\S]*?\});\s*\n/);
+  if (!m) return false;
+  const fresh = JSON.parse(m[1]);
+  if (newestStamp(fresh) === newestStamp(DATA)) return false;
+
+  DATA = fresh;
+  // A currency could in principle vanish from the page; keep panels on
+  // something that still exists.
+  panels.forEach(p => {
+    if (!DATA.currencies.includes(p.currency)) p.currency = DATA.currencies[0];
+  });
+  syncControls();
+  renderAll();
+  return true;
+}
+
+function flashUpdated() {
+  const cov = el("cov");
+  cov.style.color = "var(--up)";
+  setTimeout(() => { cov.style.color = ""; }, 2500);
+}
+
+function scheduleRefresh() {
+  setTimeout(async () => {
+    // Never yank the ground out from under a finger mid-scrub.
+    if (state.hoverT != null) { setTimeout(scheduleRefresh, 15000); return; }
+    try {
+      if (await pullFresh()) flashUpdated();
+    } catch (_) {
+      /* offline or the NAS is unreachable — the footer badge already says so,
+         and the next slot will try again */
+    }
+    scheduleRefresh();
+  }, msToNextSlot());
 }
 
 function init() {
@@ -1139,7 +1228,7 @@ function init() {
   panels.push(first);
   el("panels").appendChild(first.root);
 
-  el("cmp").addEventListener("click", () => setCompare(!state.compare));
+  el("split").addEventListener("click", () => setSplit(!state.split));
 
   el("stamp").textContent = DATA.pageUpdated ? "· BCA page: " + DATA.pageUpdated : "";
   el("fails").innerHTML = DATA.failedRuns
@@ -1159,6 +1248,12 @@ function init() {
   addEventListener("online", flagOffline);
   addEventListener("offline", flagOffline);
   flagOffline();
+
+  scheduleRefresh();
+  // Coming back to a page left open on a phone should not show yesterday.
+  addEventListener("visibilitychange", () => {
+    if (!document.hidden) pullFresh().then(ok => ok && flashUpdated()).catch(() => {});
+  });
 }
 init();
 </script>

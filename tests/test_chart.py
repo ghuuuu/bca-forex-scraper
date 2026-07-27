@@ -102,7 +102,7 @@ class TestBuild(unittest.TestCase):
         html = build(conn, out)[0].read_text(encoding="utf-8")
 
         self.assertNotIn("/*__DATA__*/null", html)
-        m = re.search(r"const DATA = (\{.*?\});\n", html, re.S)
+        m = re.search(r"let DATA = (\{.*?\});\n", html, re.S)
         assert m is not None, "embedded payload not found"
         payload = json.loads(m.group(1))
         self.assertEqual(payload["currencies"], ["USD"])
