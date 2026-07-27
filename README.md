@@ -305,7 +305,17 @@ makes this reasonable in a way that port-forwarding `http.server` would not be.
 
 **If you already run a tunnel on this NAS** — for some other subdomain — reuse
 it. One tunnel serves any number of hostnames, and a second one buys nothing.
-In the Cloudflare dashboard, on the existing tunnel:
+
+The web container joins the `edge` network so an existing cloudflared can reach
+it **by container name**, which is how the other services on such a tunnel are
+usually wired. Point `EDGE_NETWORK` in `.env` at whatever network your
+cloudflared is on:
+
+```bash
+docker inspect -f '{{range $k,$v := .NetworkSettings.Networks}}{{$k}}{{end}}' cloudflared
+```
+
+Then in the Cloudflare dashboard, on the existing tunnel:
 
 **Public Hostnames → Add a public hostname**
 
@@ -314,16 +324,23 @@ In the Cloudflare dashboard, on the existing tunnel:
 | Subdomain | `forex` |
 | Domain | your domain |
 | Type | `HTTP` |
-| URL | `<nas-lan-ip>:7000` |
+| URL | `bca-forex-web:8080` |
 
-Point it at the **NAS IP and published port**, not `web:8080`. A compose service
-name only resolves for containers on *this* project's network, and an existing
-cloudflared runs in its own stack — it has no idea what `web` means. Reaching
-the NAS on `:7000` works because the web container publishes that port on the
-host.
+Port **8080**, the port inside the container — not the 7000 published to the
+LAN. Container-to-container traffic never goes via the host.
 
-Nothing to deploy: the hostname is live in a few seconds. Then add a policy
-under **Zero Trust → Access → Applications** for the new hostname.
+`<nas-lan-ip>:7000` works too and needs no network changes, but it hard-codes an
+address that DHCP can move, and when it does the hostname breaks with nothing
+obvious to point at. A container name cannot drift.
+
+The trade-off of the network approach is coupling: this stack now depends on a
+network another project created. Delete or rename that project and `up` fails
+with `network ... not found` until `EDGE_NETWORK` is repointed. The tidier
+long-term shape is one dedicated network — `docker network create edge` — that
+everything you expose joins, owned by nothing in particular.
+
+Nothing to deploy on the Cloudflare side: the hostname is live in seconds. Then
+add a policy under **Zero Trust → Access → Applications** for it.
 
 **If you do not have a tunnel yet**, this repo ships one behind a profile, so it
 never starts by accident:
