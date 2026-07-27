@@ -41,10 +41,21 @@ services:
       # anyone on the LAN who guessed the name.
       - ./web:/web:ro
     ports:
-      # host:container — change only the LEFT number to move the port. The right
-      # one is inside the container and must stay 8080 to match the entrypoint
-      # below. DSM itself uses 5000/5001, so avoid those.
+      # Kept for plain LAN access, http://<nas-ip>:7000. Change only the LEFT
+      # number to move it; the right one is inside the container and must stay
+      # 8080 to match the entrypoint. DSM itself uses 5000/5001, so avoid those.
       - "7000:8080"
+    networks:
+      # `default` is this project's own network — listing any network at all
+      # stops Compose adding it implicitly, and the scraper lives there.
+      - default
+      # ...and the network an existing cloudflared is already on, so it can
+      # reach this container BY NAME: http://bca-forex-web:8080
+      #
+      # Routing a tunnel at <nas-ip>:7000 works too, until DHCP moves the NAS
+      # and the hostname breaks with nothing obvious to point at. A container
+      # name cannot drift.
+      - edge
     # --bind 0.0.0.0 is required: the default binds localhost inside the
     # container, which is unreachable from the NAS.
     entrypoint: ["python", "-m", "http.server", "8080",
@@ -80,3 +91,22 @@ services:
       - web
     # No ports. That is the point.
     command: ["tunnel", "--no-autoupdate", "run", "--token", "${TUNNEL_TOKEN:-}"]
+
+networks:
+  # The network your existing cloudflared already sits on. Compose attaches to
+  # it rather than creating it — `external: true` means "this belongs to
+  # something else, do not manage it".
+  #
+  # Find the name with:
+  #   docker inspect -f '{{range $k,$v := .NetworkSettings.Networks}}{{$k}}{{end}}' cloudflared
+  #
+  # Override in .env if it differs, or if you later move to a dedicated network
+  # shared by everything you expose:
+  #   EDGE_NETWORK=edge
+  #
+  # The coupling is real and worth knowing: this stack now depends on a network
+  # created by another one. Delete or rename that project and `up` fails with
+  # "network ... not found" until EDGE_NETWORK is repointed.
+  edge:
+    external: true
+    name: ${EDGE_NETWORK:-sm-material-library_default}
