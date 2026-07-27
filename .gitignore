@@ -18,6 +18,10 @@ web/*
 # tests/fixtures/ is a real input, so this is deliberately root-only.
 /chart.html
 
+# The Cloudflare Tunnel token authorises a connection into this machine. It
+# belongs on the NAS and nowhere else — .env.example is the tracked template.
+.env
+
 __pycache__/
 *.pyc
 

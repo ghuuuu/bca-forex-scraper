@@ -78,7 +78,7 @@ def _refresh_chart(store: Store, args: argparse.Namespace) -> None:
     try:
         build_chart(
             store.conn, Path(args.chart), args.limit, None,
-            Path(args.logo) if args.logo else None,
+            Path(args.logo) if args.logo else None, args.pwa,
         )
     except Exception as e:  # noqa: BLE001
         _log(f"chart refresh failed (scraping continues): {e}")
@@ -159,7 +159,7 @@ def cmd_chart(args: argparse.Namespace) -> int:
         try:
             out, currencies, points = build_chart(
                 store.conn, Path(args.out), args.limit, args.currency,
-                Path(args.logo) if args.logo else None,
+                Path(args.logo) if args.logo else None, args.pwa,
             )
         except (ValueError, OSError) as e:  # a bad --logo is a typo, not a crash
             _log(f"FAILED: {e}")
@@ -201,6 +201,7 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--no-initial", action="store_true", help="wait for the first slot instead of scraping at start")
     r.add_argument("--chart", help="rebuild this HTML chart after every scrape")
     r.add_argument("--logo", help="image to embed in the chart header")
+    r.add_argument("--pwa", action="store_true", help="also write manifest, service worker and icons")
     r.add_argument("--limit", type=int, default=20000, help="chart points per currency (default: 20000)")
     r.set_defaults(func=cmd_run)
 
@@ -218,6 +219,7 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("--currency", help="only this code, e.g. USD (default: all, switchable in the page)")
     c.add_argument("--limit", type=int, default=20000, help="most recent N scrapes per currency (default: 20000)")
     c.add_argument("--logo", help="image file to embed in the header (png/svg/jpg/gif/webp)")
+    c.add_argument("--pwa", action="store_true", help="also write manifest, service worker and icons (needs HTTPS to install)")
     c.add_argument("--open", action="store_true", help="open it in the browser when done")
     c.set_defaults(func=cmd_chart)
 
