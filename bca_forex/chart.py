@@ -769,9 +769,24 @@ function makePanel(code) {
     }
     tip.innerHTML = html;
     tip.classList.add("show");
+
+    // Sit beside the cursor, and flip to whichever side has room. Always
+    // trailing right means that on the right-hand third of the chart the panel
+    // covers the very points being inspected — the crosshair ends up behind it.
     const box = svg.parentElement.getBoundingClientRect();
     const w = tip.offsetWidth, x = clientX - box.left;
-    tip.style.left = Math.max(6, Math.min(box.width - w - 6, x + 16)) + "px";
+    const GAP = 14, PAD = 6;
+    let left;
+    if (x + GAP + w <= box.width - PAD) {
+      left = x + GAP;                       // room on the right, preferred
+    } else if (x - GAP - w >= PAD) {
+      left = x - GAP - w;                   // flip to the left of the cursor
+    } else {
+      // Too wide for either side: park it on the emptier half so it covers as
+      // little of the live region as possible.
+      left = x > box.width / 2 ? PAD : box.width - w - PAD;
+    }
+    tip.style.left = Math.max(PAD, Math.min(box.width - w - PAD, left)) + "px";
     tip.style.top = "14px";
   }
   // Park it back at the origin as well as hiding it. Left where it was, a
