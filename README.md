@@ -35,6 +35,10 @@ All 18 currencies BCA publishes, six rates each — **e-Rate**, **TT Counter** a
 > Some currencies (AED, CNH, DKK…) genuinely publish `0` for bank notes: BCA
 > does not trade physical notes in them. That is real data, not a parse failure.
 
+**Already deployed and just need to remember how it fits together?**
+[`SETUP.md`](SETUP.md) is the operational reference: what runs where, the
+Cloudflare wiring, and what to type when something looks wrong.
+
 ## Commands
 
 | Command | What it does |
