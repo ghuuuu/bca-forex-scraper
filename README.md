@@ -298,27 +298,53 @@ behind a hostname with a certificate:
 
 ### Cloudflare Tunnel
 
-The `tunnel` service in `docker-compose.yml` publishes the page at a real HTTPS
-hostname **without opening a single inbound port** — `cloudflared` dials out to
-Cloudflare and traffic returns down that connection, so the NAS stays
-unreachable from the internet. That is what makes this safe in a way that
-port-forwarding `http.server` would not be.
+A tunnel publishes the page at a real HTTPS hostname **without opening a single
+inbound port** — `cloudflared` dials out to Cloudflare and traffic returns down
+that connection, so the NAS stays unreachable from the internet. That is what
+makes this reasonable in a way that port-forwarding `http.server` would not be.
 
-1. **Zero Trust → Networks → Tunnels → Create a tunnel**, name it, and copy the
-   token it shows.
+**If you already run a tunnel on this NAS** — for some other subdomain — reuse
+it. One tunnel serves any number of hostnames, and a second one buys nothing.
+In the Cloudflare dashboard, on the existing tunnel:
+
+**Public Hostnames → Add a public hostname**
+
+| | |
+| --- | --- |
+| Subdomain | `forex` |
+| Domain | your domain |
+| Type | `HTTP` |
+| URL | `<nas-lan-ip>:7000` |
+
+Point it at the **NAS IP and published port**, not `web:8080`. A compose service
+name only resolves for containers on *this* project's network, and an existing
+cloudflared runs in its own stack — it has no idea what `web` means. Reaching
+the NAS on `:7000` works because the web container publishes that port on the
+host.
+
+Nothing to deploy: the hostname is live in a few seconds. Then add a policy
+under **Zero Trust → Access → Applications** for the new hostname.
+
+**If you do not have a tunnel yet**, this repo ships one behind a profile, so it
+never starts by accident:
+
+1. **Zero Trust → Networks → Tunnels → Create a tunnel**, copy the token.
 2. **Public hostname:** `forex.<your-domain>` → type `HTTP`, URL `web:8080`.
-   The service name, not the NAS IP — the tunnel container shares the compose
-   network and reaches the web container directly.
-3. **On the NAS**, put the token in `.env` beside `docker-compose.yml`
-   (see `.env.example`; `.env` is gitignored, and the token is a credential —
-   it authorises a connection into your machine):
+   The service name is correct *here* — this container shares the compose
+   network with the web container.
+3. Put the token in `.env` beside `docker-compose.yml` (see `.env.example`;
+   `.env` is gitignored, and the token is a credential — it authorises a
+   connection into your machine):
 
    ```
    TUNNEL_TOKEN=eyJhIjoi...
    ```
-4. **Zero Trust → Access → Applications** → add the hostname and a policy, so
-   only you can reach it.
-5. `sudo ./deploy.sh`
+4. **Zero Trust → Access → Applications** → add the hostname and a policy.
+5. Start it explicitly:
+
+   ```bash
+   sudo docker compose --profile tunnel up -d
+   ```
 
 Then open `https://forex.<your-domain>` on the phone and install it.
 

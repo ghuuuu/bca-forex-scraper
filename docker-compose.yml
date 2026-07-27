@@ -50,28 +50,33 @@ services:
     entrypoint: ["python", "-m", "http.server", "8080",
                  "--directory", "/web", "--bind", "0.0.0.0"]
 
-  # Optional: publishes the page at a real HTTPS hostname without opening a
-  # single inbound port. cloudflared dials OUT to Cloudflare and traffic comes
-  # back down that connection, so the NAS stays unreachable from the internet.
+  # OPT-IN, and only if you do not already run a tunnel on this NAS.
   #
-  # HTTPS is not cosmetic here: service workers only run in a secure context,
-  # so the offline half of the PWA does not work over plain http://nas-ip.
+  # It sits behind a profile so it never starts by accident: with no token, a
+  # cloudflared container would crash-loop forever against `restart:
+  # unless-stopped`. Start it deliberately:
   #
-  # Setup:
-  #   1. Cloudflare Zero Trust -> Networks -> Tunnels -> Create a tunnel
-  #   2. Public hostname: forex.<your-domain>  ->  http://web:8080
-  #      (service name, not the NAS IP — this container shares the compose
-  #       network, so it reaches the web container directly by name)
-  #   3. Put the tunnel token in a .env file beside this one:
-  #        TUNNEL_TOKEN=eyJhIjoi...
-  #   4. Zero Trust -> Access -> Applications, to require a login
+  #     docker compose --profile tunnel up -d
   #
-  # Comment this service out to run LAN-only.
+  # ALREADY HAVE A TUNNEL? Do not use this. One tunnel serves any number of
+  # hostnames — add a public hostname to the existing one instead:
+  #
+  #     forex.<your-domain>  ->  HTTP  ->  <nas-lan-ip>:7000
+  #
+  # Point it at the NAS IP and the published port, NOT at `web:8080`. The
+  # service name only resolves for containers on THIS compose network, and an
+  # existing cloudflared lives in its own stack.
+  #
+  # Why a tunnel at all: cloudflared dials OUT to Cloudflare and traffic returns
+  # down that connection, so the page gets a real certificate at a real hostname
+  # with no inbound port open. HTTPS is not cosmetic — service workers only run
+  # in a secure context, so offline does not work over plain http://nas-ip.
   tunnel:
     image: cloudflare/cloudflared:latest
     container_name: bca-forex-tunnel
     restart: unless-stopped
+    profiles: ["tunnel"]
     depends_on:
       - web
     # No ports. That is the point.
-    command: ["tunnel", "--no-autoupdate", "run", "--token", "${TUNNEL_TOKEN}"]
+    command: ["tunnel", "--no-autoupdate", "run", "--token", "${TUNNEL_TOKEN:-}"]
