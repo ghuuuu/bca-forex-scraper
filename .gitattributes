@@ -1,0 +1,15 @@
+# Everything the NAS executes or parses must keep LF endings, whatever the
+# checkout platform does by default. A shell script that arrives with CRLF
+# fails on Linux as "bad interpreter: No such file or directory", which reads
+# like a missing shell rather than a line-ending problem and wastes an evening.
+*.sh            text eol=lf
+Dockerfile      text eol=lf
+*.yml           text eol=lf
+.dockerignore   text eol=lf
+
+# Windows-side helpers, correspondingly, want CRLF.
+*.bat           text eol=crlf
+
+# Binary-ish assets git should not touch.
+*.sqlite3       binary
+*.png           binary

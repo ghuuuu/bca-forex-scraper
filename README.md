@@ -188,6 +188,31 @@ cd /volume1/docker/bca-forex && sudo docker compose up -d --build
 
 If `docker compose` is not found on the older package, use `docker-compose`.
 
+**Updating it**
+
+```bash
+sudo ./deploy.sh
+```
+
+Pulls, rebuilds, restarts, clears dangling layers and prints the last of the
+log. Safe to re-run — the database is on the host and a rebuild never touches
+it. Without a git checkout (the copy-over-SMB workflow) it skips the pull and
+rebuilds what is on disk, which is the step that actually gets forgotten.
+
+The rebuild is the part that matters: `Dockerfile` copies `bca_forex/` **into
+the image**, so new files on the NAS change nothing until the image is rebuilt.
+That is why a plain `up -d`, or copying files and restarting, appears to do
+nothing.
+
+Two things that bite on Synology, both already handled:
+
+- **`.sh` files must keep LF endings.** Checked out with CRLF on Windows and
+  copied over, the script fails as `bad interpreter: No such file or directory`
+  — which reads like a missing shell, not a line-ending problem. `.gitattributes`
+  pins `eol=lf`; if you edit `deploy.sh` in Notepad, save it as LF.
+- **The executable bit** is committed as `100755`. If you copy over SMB rather
+  than clone, Windows drops it — `sudo chmod +x deploy.sh` once on the NAS.
+
 **Checking on it**
 
 ```bash
