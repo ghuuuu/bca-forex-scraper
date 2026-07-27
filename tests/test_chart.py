@@ -12,7 +12,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from bca_forex.chart import BUNDLED_LOGO, build, collect, logo_markup  # noqa: E402
+from bca_forex.chart import (  # noqa: E402
+    BUNDLED_LOGO, PWA_ICONS, build, collect, logo_markup, write_pwa,
+)
 from bca_forex.store import Store  # noqa: E402
 
 FIELDS = ("e_rate_buy", "e_rate_sell", "tt_buy", "tt_sell", "bank_notes_buy", "bank_notes_sell")
@@ -169,6 +171,56 @@ class TestLogo(unittest.TestCase):
         out = Path(tempfile.mkdtemp()) / "c.html"
         html = build(conn, out)[0].read_text(encoding="utf-8")
         self.assertNotIn("__LOGO__", html)
+
+
+class TestPWA(unittest.TestCase):
+    def test_icons_ship_with_the_package(self):
+        # iOS will not take an SVG home-screen icon, so these have to be real
+        # PNGs and have to be inside bca_forex/ for the Docker image to get them
+        for name in PWA_ICONS:
+            p = BUNDLED_LOGO.parent / name
+            self.assertTrue(p.exists(), f"missing {p} — run tools/make_icons.py")
+            self.assertEqual(p.read_bytes()[:8], b"\x89PNG\r\n\x1a\n", f"{name} is not a PNG")
+
+    def test_write_pwa_emits_the_whole_set(self):
+        d = Path(tempfile.mkdtemp())
+        written = write_pwa(d)
+        names = {p.name for p in written}
+        self.assertEqual(names, {"manifest.webmanifest", "sw.js", *PWA_ICONS})
+
+    def test_manifest_is_valid_and_standalone(self):
+        d = Path(tempfile.mkdtemp())
+        write_pwa(d)
+        man = json.loads((d / "manifest.webmanifest").read_text(encoding="utf-8"))
+        self.assertEqual(man["display"], "standalone")
+        self.assertTrue(any(i.get("purpose") == "maskable" for i in man["icons"]))
+
+    def test_service_worker_refuses_to_cache_a_login_redirect(self):
+        # behind Cloudflare Access an expired session answers with a login page;
+        # caching it would pin the app to a screen it cannot get past
+        d = Path(tempfile.mkdtemp())
+        write_pwa(d)
+        sw = (d / "sw.js").read_text(encoding="utf-8")
+        self.assertIn("res.redirected", sw)
+        self.assertIn("opaqueredirect", sw)
+
+    def test_pwa_flag_adds_the_head_tags(self):
+        conn = db_with([(T1, "USD", 1.0, 1.0, 1.0, 1.0, 1.0, 1.0)])
+        d = Path(tempfile.mkdtemp())
+        html = build(conn, d / "index.html", pwa=True)[0].read_text(encoding="utf-8")
+        self.assertIn('rel="manifest"', html)
+        self.assertIn("serviceWorker", html)
+        self.assertIn("apple-mobile-web-app-capable", html)
+
+    def test_without_the_flag_nothing_is_referenced_or_written(self):
+        # the standalone file has to stay standalone — referencing a manifest
+        # that is not beside it would 404 on every load from a USB stick
+        conn = db_with([(T1, "USD", 1.0, 1.0, 1.0, 1.0, 1.0, 1.0)])
+        d = Path(tempfile.mkdtemp())
+        html = build(conn, d / "chart.html")[0].read_text(encoding="utf-8")
+        for token in ("manifest", "sw.js", "serviceWorker", "__PWA__"):
+            self.assertNotIn(token, html)
+        self.assertEqual([p.name for p in d.iterdir()], ["chart.html"])
 
 
 if __name__ == "__main__":

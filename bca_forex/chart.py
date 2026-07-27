@@ -163,12 +163,142 @@ def collect(
     }
 
 
+#: Icon files copied out beside the page when --pwa is used.
+PWA_ICONS = ("icon-192.png", "icon-512.png", "icon-512-maskable.png", "apple-touch-icon.png")
+
+# Only emitted with --pwa. Referencing a manifest or a service worker that is
+# not there would turn a file you can open from a USB stick into one that logs
+# 404s on every load.
+PWA_HEAD = """
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0b0e14">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="BCA Forex">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<script>
+  if ("serviceWorker" in navigator) {
+    addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
+  }
+</script>"""
+
+MANIFEST = {
+    "name": "BCA Forex Rates",
+    "short_name": "BCA Forex",
+    "description": "BCA published exchange-rate history, updated every 15 minutes.",
+    "start_url": ".",
+    "scope": ".",
+    "display": "standalone",
+    "orientation": "any",
+    "background_color": "#0b0e14",
+    "theme_color": "#0b0e14",
+    "icons": [
+        {"src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+        {"src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
+        {"src": "icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"},
+    ],
+}
+
+# Network-first for the page, cache-first for the icons.
+#
+# The page IS the data — a new one is written after every scrape — so a stale
+# cached copy served in preference to the network would defeat the point. Going
+# to the network first and falling back to cache gives the behaviour actually
+# wanted: current rates on the LAN, last-known rates when the NAS is
+# unreachable, which is the whole reason for doing this.
+#
+# Redirected or non-OK responses are never cached. Behind Cloudflare Access an
+# expired session answers with a login page, and caching that would pin the app
+# to a login screen it can no longer get past.
+SERVICE_WORKER = """\
+const CACHE = "bca-forex-v1";
+const SHELL = ["./", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png",
+               "./icon-512-maskable.png", "./apple-touch-icon.png"];
+
+self.addEventListener("install", e => {
+  e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
+});
+
+self.addEventListener("activate", e => {
+  e.waitUntil(
+    caches.keys()
+      .then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k))))
+      .then(() => self.clients.claim())
+  );
+});
+
+function cacheable(res) {
+  return res && res.ok && !res.redirected && res.type !== "opaqueredirect";
+}
+
+self.addEventListener("fetch", e => {
+  const req = e.request;
+  if (req.method !== "GET") return;
+
+  const isPage = req.mode === "navigate" || new URL(req.url).pathname.endsWith("/");
+
+  if (isPage) {
+    e.respondWith(
+      fetch(req)
+        .then(res => {
+          if (cacheable(res)) {
+            const copy = res.clone();
+            caches.open(CACHE).then(c => c.put("./", copy));
+          }
+          return res;
+        })
+        .catch(() => caches.match("./").then(hit => hit || Response.error()))
+    );
+    return;
+  }
+
+  e.respondWith(
+    caches.match(req).then(hit => hit || fetch(req).then(res => {
+      if (cacheable(res)) {
+        const copy = res.clone();
+        caches.open(CACHE).then(c => c.put(req, copy));
+      }
+      return res;
+    }))
+  );
+});
+"""
+
+
+def write_pwa(directory: Path) -> list[Path]:
+    """Drop the manifest, service worker and icons beside the page."""
+    directory.mkdir(parents=True, exist_ok=True)
+    written = []
+
+    manifest = directory / "manifest.webmanifest"
+    manifest.write_text(json.dumps(MANIFEST, indent=2), encoding="utf-8")
+    written.append(manifest)
+
+    sw = directory / "sw.js"
+    sw.write_text(SERVICE_WORKER, encoding="utf-8")
+    written.append(sw)
+
+    for name in PWA_ICONS:
+        src = BUNDLED_LOGO.parent / name
+        if not src.exists():
+            raise FileNotFoundError(
+                f"missing icon {src} — regenerate with `python tools/make_icons.py`"
+            )
+        dest = directory / name
+        dest.write_bytes(src.read_bytes())
+        written.append(dest)
+
+    return written
+
+
 def build(
     conn: sqlite3.Connection,
     out: Path,
     limit: int = 20000,
     currency: str | None = None,
     logo: Path | None = None,
+    pwa: bool = False,
 ) -> tuple[Path, int, int]:
     """Write the chart. Returns (path, currencies, total points)."""
     payload = collect(conn, limit, currency)
@@ -176,9 +306,12 @@ def build(
         TEMPLATE
         .replace("/*__DATA__*/null", json.dumps(payload, separators=(",", ":")))
         .replace("<!--__LOGO__-->", logo_markup(logo))
+        .replace("<!--__PWA__-->", PWA_HEAD if pwa else "")
     )
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(html, encoding="utf-8")
+    if pwa:
+        write_pwa(out.parent)
     points = sum(len(v["t"]) for v in payload["data"].values())
     return out, len(payload["currencies"]), points
 
@@ -189,6 +322,7 @@ TEMPLATE = r"""<!DOCTYPE html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>BCA Forex — rate history</title>
+<!--__PWA__-->
 <style>
   :root {
     --bg: #0b0e14; --panel: #121722; --panel-2: #171d2a; --line: #232b3b;
@@ -336,6 +470,16 @@ TEMPLATE = r"""<!DOCTYPE html>
 
   footer { color: var(--muted); font-size: 11.5px; display: flex; flex-wrap: wrap; gap: 6px 16px; }
   .warn { color: #fbbf24; }
+  /* Cached-and-offline has to announce itself. A rate page that silently shows
+     yesterday's numbers as though they were current is worse than one that
+     fails outright. */
+  #offline[hidden] { display: none; }
+  #offline {
+    display: inline-flex; align-items: center; gap: 7px; color: #fbbf24;
+    background: rgba(251,191,36,.10); border: 1px solid rgba(251,191,36,.35);
+    border-radius: 999px; padding: 5px 12px; font-weight: 600;
+  }
+  #offline::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: #fbbf24; }
 
   /* Phones. The controls break first: three pills and six range buttons cannot
      share one 360px line, so each row takes the full width instead. */
@@ -411,6 +555,7 @@ TEMPLATE = r"""<!DOCTYPE html>
   <div class="panels" id="panels"></div>
 
   <footer>
+    <span id="offline" hidden>Offline — showing last synced data</span>
     <span id="cov"></span>
     <span id="stamp"></span>
     <span id="fails"></span>
@@ -966,6 +1111,14 @@ function init() {
     state.hoverT = null; panels.forEach(p => p.hideTip());
     renderAll();
   });
+
+  // Installed to a home screen, the page can be opened well away from the NAS,
+  // where the service worker serves the last copy it saw. Say so.
+  const offline = el("offline");
+  const flagOffline = () => { offline.hidden = navigator.onLine; };
+  addEventListener("online", flagOffline);
+  addEventListener("offline", flagOffline);
+  flagOffline();
 }
 init();
 </script>

@@ -270,6 +270,67 @@ No rebuild needed — the image is already built by this point.
   the NAS clock is set to something else.
 - **Disk use is trivial** — roughly 1 MB of SQLite per year at 15-minute slots.
 
+## Installing it on a phone
+
+`--pwa` writes a manifest, a service worker and an icon set beside the page, so
+it installs to a home screen and keeps working offline. The NAS setup passes it
+already; add it to a manual build with:
+
+```bat
+python -m bca_forex chart --out web/index.html --pwa
+```
+
+Plain `chart --out chart.html` stays exactly as it was — one self-contained
+file, nothing referenced, nothing written beside it. A manifest link in a file
+you opened from a USB stick would only 404.
+
+**Offline behaviour is deliberate.** The page *is* the data, rewritten after
+every scrape, so the service worker goes to the network first and falls back to
+cache. On the LAN you get current rates; away from home you get the last ones it
+saw, with an amber "Offline — showing last synced data" marker in the footer so
+a stale page never passes for a live one.
+
+**Service workers need HTTPS.** That is a browser rule — a secure context is
+required, and `http://<nas-ip>:7000/` is not one. Over plain HTTP, iOS will
+still add it to the home screen and run it fullscreen, but there is no offline
+cache and Android will not offer a real install. For the full thing, put it
+behind a hostname with a certificate:
+
+### Cloudflare Tunnel
+
+The `tunnel` service in `docker-compose.yml` publishes the page at a real HTTPS
+hostname **without opening a single inbound port** — `cloudflared` dials out to
+Cloudflare and traffic returns down that connection, so the NAS stays
+unreachable from the internet. That is what makes this safe in a way that
+port-forwarding `http.server` would not be.
+
+1. **Zero Trust → Networks → Tunnels → Create a tunnel**, name it, and copy the
+   token it shows.
+2. **Public hostname:** `forex.<your-domain>` → type `HTTP`, URL `web:8080`.
+   The service name, not the NAS IP — the tunnel container shares the compose
+   network and reaches the web container directly.
+3. **On the NAS**, put the token in `.env` beside `docker-compose.yml`
+   (see `.env.example`; `.env` is gitignored, and the token is a credential —
+   it authorises a connection into your machine):
+
+   ```
+   TUNNEL_TOKEN=eyJhIjoi...
+   ```
+4. **Zero Trust → Access → Applications** → add the hostname and a policy, so
+   only you can reach it.
+5. `sudo ./deploy.sh`
+
+Then open `https://forex.<your-domain>` on the phone and install it.
+
+**One wrinkle with Access:** an expired session answers requests with a login
+page instead of the file. The service worker refuses to cache redirected or
+non-OK responses for exactly that reason — otherwise the app would cache the
+login screen and pin itself to it. Set a long session duration in the Access
+policy so the phone is not re-authenticating constantly.
+
+To stay LAN-only, comment out the `tunnel` service; everything else works
+unchanged.
+
 ## Which rate should I use?
 
 For **buying** imported goods, the relevant one is **e-Rate sell** — what it
@@ -294,7 +355,7 @@ If that happens, save the page and check the attribute names against
 python -m unittest discover -s tests -v
 ```
 
-33 tests, run against a real page saved in `tests/fixtures/`. Beyond parsing,
+39 tests, run against a real page saved in `tests/fixtures/`. Beyond parsing,
 they check the things that would be expensive to get wrong and easy to miss:
 that `17.980,00` reads as 17 980 and not 17.98 (Indonesian decimal separators
 are the reverse of English), that sell is never below buy (which would mean the
@@ -318,7 +379,8 @@ BCA Forex Scraper/
 │   ├── store.py        SQLite
 │   ├── schedule.py     every-15-minute WIB slot maths
 │   ├── chart.py        the HTML chart builder
-│   └── assets/         BCA's logo, embedded into the chart
+│   └── assets/         BCA's logo, plus the PWA icon set
+├── tools/make_icons.py regenerates the icons (stdlib PNG writer)
 ├── tests/              unit tests + a saved page
 ├── data/               the database (created on first run)
 ├── run-once.bat

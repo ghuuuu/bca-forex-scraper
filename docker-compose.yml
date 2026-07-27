@@ -24,8 +24,9 @@ services:
     volumes:
       - ./data:/data     # the database — private
       - ./web:/web       # only the rendered chart goes here
-    # Written as index.html so the bare host:port URL opens it.
-    command: ["run", "--chart", "/web/index.html"]
+    # Written as index.html so the bare host:port URL opens it. --pwa adds the
+    # manifest, service worker and icons beside it.
+    command: ["run", "--chart", "/web/index.html", "--pwa"]
 
   web:
     build: .
@@ -48,3 +49,29 @@ services:
     # container, which is unreachable from the NAS.
     entrypoint: ["python", "-m", "http.server", "8080",
                  "--directory", "/web", "--bind", "0.0.0.0"]
+
+  # Optional: publishes the page at a real HTTPS hostname without opening a
+  # single inbound port. cloudflared dials OUT to Cloudflare and traffic comes
+  # back down that connection, so the NAS stays unreachable from the internet.
+  #
+  # HTTPS is not cosmetic here: service workers only run in a secure context,
+  # so the offline half of the PWA does not work over plain http://nas-ip.
+  #
+  # Setup:
+  #   1. Cloudflare Zero Trust -> Networks -> Tunnels -> Create a tunnel
+  #   2. Public hostname: forex.<your-domain>  ->  http://web:8080
+  #      (service name, not the NAS IP — this container shares the compose
+  #       network, so it reaches the web container directly by name)
+  #   3. Put the tunnel token in a .env file beside this one:
+  #        TUNNEL_TOKEN=eyJhIjoi...
+  #   4. Zero Trust -> Access -> Applications, to require a login
+  #
+  # Comment this service out to run LAN-only.
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    container_name: bca-forex-tunnel
+    restart: unless-stopped
+    depends_on:
+      - web
+    # No ports. That is the point.
+    command: ["tunnel", "--no-autoupdate", "run", "--token", "${TUNNEL_TOKEN}"]
