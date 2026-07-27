@@ -434,7 +434,15 @@ TEMPLATE = r"""<!DOCTYPE html>
      without this a stale offset could extend the page's scroll width and give
      the whole document a horizontal scrollbar. */
   .chartbox { position: relative; overflow: hidden; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 4px; }
-  .chart { display: block; width: 100%; height: 60vh; min-height: 330px; max-height: 600px; touch-action: pan-y; }
+  .chart {
+    display: block; width: 100%; height: 60vh; min-height: 330px; max-height: 600px;
+    /* Vertical drags scroll the page; sideways ones are the chart's. */
+    touch-action: pan-y;
+    /* A long press would otherwise start a text selection or pop the iOS
+       callout, and either one cancels the gesture mid-scrub. */
+    -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+  }
+  .chart.scrubbing { touch-action: none; }
   .panels.compare .chart { height: 46vh; min-height: 280px; max-height: 460px; }
   .chart text { fill: var(--muted); font-size: 11px; }
   .notice {
@@ -940,55 +948,87 @@ function makePanel(code) {
   // even at zero opacity.
   function hideTip() { tip.classList.remove("show"); tip.style.left = "0px"; }
 
-  svg.addEventListener("mousemove", e => {
-    const ts = nearestTime(e.clientX);
-    if (ts !== state.hoverT) { state.hoverT = ts; state.tipOwner = api; renderAll(); }
-    state.tipOwner = api;
-    showTip(e.clientX);
-  });
-  svg.addEventListener("mouseleave", () => {
+  /* Pointer events, not mouse + touch events.
+   *
+   * A touchscreen fires COMPATIBILITY MOUSE EVENTS after touchend — a phantom
+   * mousemove at the lifted finger's position. With a separate mousemove
+   * handler that re-opens the tooltip a frame after the touch closed it, and
+   * no mouseleave ever follows on a touchscreen, so it stays open forever.
+   * One pointer stream has no phantoms to fight.
+   */
+  const fromMouse = e => e.pointerType === "mouse";
+
+  function clearHover() {
     state.hoverT = null; state.tipOwner = null;
     panels.forEach(p => p.hideTip());
     renderAll();
+  }
+
+  function moveTo(clientX) {
+    const ts = nearestTime(clientX);
+    if (ts !== state.hoverT) { state.hoverT = ts; renderAll(); }
+    state.tipOwner = api;
+    showTip(clientX);
+  }
+
+  // Dragging the chart should still scroll the page — it is most of the screen
+  // on a phone — so a touch only takes the crosshair once it has shown it means
+  // to. Two ways to qualify: hold still briefly, or move sideways. The second
+  // matters because holding and then swiping in one motion is the natural
+  // gesture, and waiting out a timer mid-swipe feels broken.
+  const HOLD_MS = 260, SLOP = 10;
+  let armed = false, holdTimer = null, pid = null, sx = 0, sy = 0;
+
+  function arm(clientX) {
+    clearTimeout(holdTimer);
+    armed = true;
+    // Capture, so the finger can leave the chart — off the top, onto the stats
+    // table — and the scrub still tracks instead of dying mid-gesture.
+    try { svg.setPointerCapture(pid); } catch (_) {}
+    // touch-action cannot be changed mid-gesture; the browser has already
+    // classified this one. The class is for the NEXT gesture, and preventDefault
+    // below carries this one.
+    svg.classList.add("scrubbing");
+    moveTo(clientX);
+    if (navigator.vibrate) navigator.vibrate(8);
+  }
+
+  function disarm() {
+    clearTimeout(holdTimer);
+    if (armed) {
+      armed = false;
+      svg.classList.remove("scrubbing");
+      try { svg.releasePointerCapture(pid); } catch (_) {}
+      clearHover();
+    }
+    pid = null;
+  }
+
+  svg.addEventListener("pointerdown", e => {
+    if (fromMouse(e)) return;
+    pid = e.pointerId; sx = e.clientX; sy = e.clientY; armed = false;
+    clearTimeout(holdTimer);
+    holdTimer = setTimeout(() => arm(sx), HOLD_MS);
   });
 
-  // Touch: a tap should still scroll the page, so the crosshair only takes over
-  // after a deliberate hold. Once it has, moves are ours and scrolling stops.
-  let holdTimer = null, holding = false, sx = 0, sy = 0;
-  svg.addEventListener("touchstart", e => {
-    const t0 = e.touches[0]; sx = t0.clientX; sy = t0.clientY;
-    holdTimer = setTimeout(() => {
-      holding = true;
-      svg.style.touchAction = "none";
-      state.hoverT = nearestTime(sx); state.tipOwner = api;
-      renderAll(); showTip(sx);
-      if (navigator.vibrate) navigator.vibrate(8);
-    }, 260);
-  }, { passive: true });
+  svg.addEventListener("pointermove", e => {
+    if (fromMouse(e)) { moveTo(e.clientX); return; }   // hover, no button needed
+    if (e.pointerId !== pid) return;
 
-  svg.addEventListener("touchmove", e => {
-    const t0 = e.touches[0];
-    if (!holding) {
-      if (Math.abs(t0.clientY - sy) > 9 || Math.abs(t0.clientX - sx) > 9) clearTimeout(holdTimer);
+    if (!armed) {
+      const dx = Math.abs(e.clientX - sx), dy = Math.abs(e.clientY - sy);
+      if (dx > SLOP && dx > dy) arm(e.clientX);        // sideways: scrubbing
+      else if (dy > SLOP) { clearTimeout(holdTimer); pid = null; }  // upwards: scrolling
       return;
     }
     e.preventDefault();
-    const ts = nearestTime(t0.clientX);
-    if (ts !== state.hoverT) { state.hoverT = ts; renderAll(); }
-    showTip(t0.clientX);
+    moveTo(e.clientX);
   }, { passive: false });
 
-  function endTouch() {
-    clearTimeout(holdTimer);
-    if (holding) {
-      holding = false; svg.style.touchAction = "pan-y";
-      state.hoverT = null; state.tipOwner = null;
-      panels.forEach(p => p.hideTip());
-      renderAll();
-    }
-  }
-  svg.addEventListener("touchend", endTouch);
-  svg.addEventListener("touchcancel", endTouch);
+  // Release closes it, the way lifting a mouse off the chart does.
+  svg.addEventListener("pointerup", e => { if (!fromMouse(e)) disarm(); });
+  svg.addEventListener("pointercancel", e => { if (!fromMouse(e)) disarm(); });
+  svg.addEventListener("pointerleave", e => { if (fromMouse(e)) clearHover(); });
 
   const api = {
     root, render, hideTip,
