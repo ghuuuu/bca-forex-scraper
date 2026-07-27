@@ -148,6 +148,22 @@ class TestLogo(unittest.TestCase):
             logo_markup(p)
         self.assertIn(".svg", str(cm.exception))
 
+    def test_the_headline_defaults_to_e_rate_sell(self):
+        # sell is the number you pay to buy foreign currency, so it is the one
+        # worth leading with; buy stays one pick away in the dropdown
+        conn = db_with([(T1, "USD", 1.0, 1.0, 1.0, 1.0, 1.0, 1.0)])
+        out = Path(tempfile.mkdtemp()) / "c.html"
+        html = build(conn, out)[0].read_text(encoding="utf-8")
+        self.assertIn('metric: { key: "e_rate", side: 1 }', html)
+
+    def test_every_series_and_side_is_offered_as_a_headline(self):
+        conn = db_with([(T1, "USD", 1.0, 1.0, 1.0, 1.0, 1.0, 1.0)])
+        out = Path(tempfile.mkdtemp()) / "c.html"
+        html = build(conn, out)[0].read_text(encoding="utf-8")
+        # the picker is built from DATA.series x [buy, sell] at runtime
+        self.assertIn('SIDES = ["Buy", "Sell"]', html)
+        self.assertIn("${s.key}:${side}", html)
+
     def test_the_placeholder_is_gone_from_the_built_page(self):
         conn = db_with([(T1, "USD", 1.0, 1.0, 1.0, 1.0, 1.0, 1.0)])
         out = Path(tempfile.mkdtemp()) / "c.html"

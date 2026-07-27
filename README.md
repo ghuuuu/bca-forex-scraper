@@ -123,6 +123,15 @@ double-clicks it.
 - **Three controls, one per rate type.** e-Rate, TT Counter and Bank Notes. Each
   one shows *both* sides: buy solid, sell dashed, and the band shaded between
   them — that band is the spread, which is the thing worth looking at.
+- **Headline picker.** The big number defaults to **e-Rate sell** — what you pay
+  to buy foreign currency — and the dropdown swaps it to any of the six
+  series/side combinations. High, low and change follow whichever side you pick.
+- **Compare two currencies.** Side by side above 940px, stacked below, so a
+  phone gets two readable charts instead of two cramped ones. Defaults to USD
+  and CNH. Metric, series and range stay shared across both panels — two
+  currencies are only comparable if they are being read the same way — and the
+  crosshair is synced by timestamp, so hovering one marks the same moment on
+  the other.
 - **Every currency in one file.** Switch with the dropdown; no rebuild needed.
   Scales differ by a factor of 2000 (KRW ≈ 12 IDR, CHF ≈ 22 000), so they get
   one chart each rather than one unreadable chart together.
@@ -246,7 +255,7 @@ If that happens, save the page and check the attribute names against
 python -m unittest discover -s tests -v
 ```
 
-31 tests, run against a real page saved in `tests/fixtures/`. Beyond parsing,
+33 tests, run against a real page saved in `tests/fixtures/`. Beyond parsing,
 they check the things that would be expensive to get wrong and easy to miss:
 that `17.980,00` reads as 17 980 and not 17.98 (Indonesian decimal separators
 are the reverse of English), that sell is never below buy (which would mean the
