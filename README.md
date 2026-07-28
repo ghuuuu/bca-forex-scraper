@@ -44,7 +44,7 @@ Cloudflare wiring, and what to type when something looks wrong.
 | Command | What it does |
 | --- | --- |
 | `once` | Scrape now and exit. Use with Task Scheduler if you prefer per-run tasks over a long-running service. |
-| `run` | Stay running and scrape **every 15 minutes, WIB**. |
+| `run` | Stay running and scrape on the **trading-hours schedule** (15 min in hours, hourly otherwise). |
 | `latest` | Print the newest stored scrape (`--json` for machine output). |
 | `export --out rates.csv` | Dump history to CSV. `--currency USD` to narrow it. |
 | `chart --open` | Build `chart.html` from the history and open it. |
@@ -54,14 +54,20 @@ Add `--db <path>` to any of them to use a different database file.
 
 ## Schedule
 
-Runs **every 15 minutes on the quarter hour**, Indonesian time: 08:00, 08:15,
-08:30, 08:45… — 4 scrapes an hour, 96 a day.
+Two cadences, Indonesian time:
 
-- **Pinned to the clock, not to start-up.** A plain "sleep 15 minutes" loop
-  lands on whatever minute the machine booted on and moves on every restart, so
-  the history gets sampled at times you cannot predict or line up between runs.
-- **On the quarter hour exactly**, so the slots read the same on every machine
-  and after every restart.
+- **Trading hours — Mon–Fri 08:00–17:00 WIB:** every 15 minutes (08:00, 08:15,
+  08:30, 08:45…), when BCA actually moves its rates.
+- **Everything else — nights and weekends:** once an hour, on the hour. Some
+  currencies (CNH, say) still drift when the counters are shut, so going dark
+  would lose real movement; but 15-minute sampling of a near-static page is
+  wasted rows. 17:00 is caught as the first hourly slot, so the day's close is
+  still recorded.
+
+- **Pinned to the clock, not to start-up.** A plain "sleep" loop lands on
+  whatever minute the machine booted on and moves on every restart, so the
+  history gets sampled at times you cannot predict or line up between runs.
+- **On the slot exactly**, so the readings line up on every machine and restart.
 - **Computed in WIB (UTC+7)**, so the mini PC's own timezone setting cannot
   shift the slots. Indonesia has no daylight saving, so a fixed offset is
   correct and not just convenient.
@@ -146,9 +152,17 @@ double-clicks it.
   still scrolls the page, so the chart does not hijack the phone.
 - **Ranges** 1D / 1W / 1M / 3M / 1Y / ALL, greyed out until there is history
   behind them.
-- **Gaps stay gaps.** If the scraper was down, the span is shaded grey and the
-  line becomes a grey dotted bridge across it — so the outage reads as an
-  outage, not as a real move the scraper never observed.
+- **Session x-axis.** Points are spaced evenly, not by wall-clock time, so the
+  quietly-sampled closed hours compress and the trading day fills the width — a
+  session chart, the way Moomoo/TradingView draw one. In **1D** the closed span
+  (nights, weekends) is shaded grey and labelled **"Closed"**; longer ranges
+  just run the line straight through, no grey.
+- **Market badge.** The header shows ● Market open, or ● Closed with the next
+  open time, from the current WIB clock.
+- **High / low markers** on the headline line, and it **remembers** your last
+  currency, range and layout between visits.
+- **Real outages still show** — a genuine data hole (the scraper down) becomes a
+  grey dotted bridge, distinct from the normal overnight cadence.
 - **Bank Notes disables itself** for currencies BCA quotes as `0.00`.
 
 Options: `--currency USD` for one code, `--limit N` to cap points per currency,
