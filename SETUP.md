@@ -10,7 +10,8 @@ This file is the operational half: what runs where, and what to type.
 
 ## The short version
 
-A scraper on the NAS reads BCA's published exchange rates every 15 minutes into
+A scraper on the NAS reads BCA's published exchange rates on a trading-hours
+schedule (every 15 min in hours, hourly otherwise) into
 a SQLite file, and rewrites a self-contained HTML chart after each read. A second
 container serves that chart. An existing Cloudflare Tunnel publishes it at
 `https://forex.mulya.id`, which installs to a phone as an app.
@@ -154,8 +155,12 @@ Every one takes `--db`.
 
 ## The schedule
 
-Every 15 minutes on the quarter hour — 08:00, 08:15, 08:30, 08:45 — Indonesian
-time. 96 scrapes a day.
+Two cadences, Indonesian time:
+
+- **Trading hours (Mon–Fri 08:00–17:00 WIB):** every 15 minutes.
+- **Nights and weekends:** once an hour. Some currencies still drift when the
+  counters are shut, so it does not go fully dark; 17:00 lands as the first
+  hourly slot, capturing the close.
 
 Times are computed from a **fixed UTC+7** inside the code, not from the system
 clock's timezone. Indonesia has no daylight saving, so the offset is correct
@@ -163,11 +168,14 @@ rather than merely convenient, and the slots hold even if the NAS clock is set
 to something else. `TZ=Asia/Jakarta` in the `Dockerfile` only tidies library
 logs.
 
-To change it, edit `SLOTS` in `bca_forex/schedule.py` — one line, and everything
-else follows:
+To change the window or cadence, edit the constants at the top of
+`bca_forex/schedule.py` — `OPEN_MIN` / `CLOSE_MIN` and the two `*_SLOTS`
+tuples — and everything else follows:
 
 ```python
-SLOTS: tuple[int, ...] = tuple(range(0, 60, 15))
+OPEN_MIN, CLOSE_MIN = 8 * 60, 17 * 60
+ACTIVE_SLOTS = tuple(range(0, 60, 15))   # trading hours
+CLOSED_SLOTS = (0,)                      # nights + weekends, hourly
 ```
 
 ---

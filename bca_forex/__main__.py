@@ -1,7 +1,7 @@
 """Command line: `python -m bca_forex <command>`.
 
     once     scrape now, store, print a summary
-    run      stay running and scrape every 15 minutes, WIB (this is the service)
+    run      stay running and scrape on the trading-hours schedule (the service)
     latest   show the most recent stored scrape
     export   write the history to CSV
     chart    build a self-contained HTML chart of the history
@@ -85,7 +85,7 @@ def _refresh_chart(store: Store, args: argparse.Namespace) -> None:
 
 
 def cmd_run(args: argparse.Namespace) -> int:
-    _log(f"BCA Forex Scraper {__version__} — every 15 min on the quarter hour WIB, db {args.db}")
+    _log(f"BCA Forex Scraper {__version__} — 15 min in trading hours, hourly otherwise WIB, db {args.db}")
     if args.chart:
         _log(f"chart refreshed after each scrape -> {args.chart}")
     with Store(args.db) as store:
@@ -197,7 +197,7 @@ def build_parser() -> argparse.ArgumentParser:
     o.add_argument("--html", help="parse this saved HTML file instead of fetching")
     o.set_defaults(func=cmd_once)
 
-    r = sub.add_parser("run", help="run forever, scraping every 15 minutes WIB")
+    r = sub.add_parser("run", help="run forever, scraping on the trading-hours schedule")
     r.add_argument("--no-initial", action="store_true", help="wait for the first slot instead of scraping at start")
     r.add_argument("--chart", help="rebuild this HTML chart after every scrape")
     r.add_argument("--logo", help="image to embed in the chart header")

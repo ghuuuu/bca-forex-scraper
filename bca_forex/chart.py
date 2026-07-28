@@ -370,6 +370,15 @@ TEMPLATE = r"""<!DOCTYPE html>
     border: 1px solid var(--line); border-radius: 999px; padding: 6px 12px; white-space: nowrap;
   }
   header.brand a.src:hover { color: var(--text); border-color: #38455e; }
+  header.brand .market {
+    flex: none; display: inline-flex; align-items: center; gap: 7px;
+    font-size: 11.5px; font-weight: 600; color: var(--muted);
+    border: 1px solid var(--line); border-radius: 999px; padding: 6px 12px; white-space: nowrap;
+  }
+  header.brand .market::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+  header.brand .market.open { color: var(--up); }
+  header.brand .market.closed { color: var(--muted); }
+  @media (max-width: 620px) { header.brand .market { display: none; } }
 
   select, button { font-family: inherit; }
   select.sel {
@@ -563,6 +572,7 @@ TEMPLATE = r"""<!DOCTYPE html>
       <div class="t">BCA Forex Rates</div>
       <div class="s">Kurs history &middot; Bank Central Asia</div>
     </div>
+    <span class="market" id="market" hidden></span>
     <a class="src" href="https://www.bca.co.id/id/informasi/kurs" target="_blank" rel="noopener noreferrer">Source &#8599;</a>
   </header>
 
@@ -615,6 +625,17 @@ function wibParts(ts) {
   return { y: d.getUTCFullYear(), mo: d.getUTCMonth(), d: d.getUTCDate(),
            h: d.getUTCHours(), mi: d.getUTCMinutes() };
 }
+// Trading window, mirrored from the scraper: Mon-Fri 08:00-17:00 WIB. A display
+// constant — the chart decides what to grey, independent of when it was scraped.
+const OPEN_MIN = 8 * 60, CLOSE_MIN = 17 * 60;
+function isClosed(ts) {
+  const d = new Date((ts + 7 * 3600) * 1000);
+  const day = d.getUTCDay();                 // 0 Sun .. 6 Sat
+  if (day === 0 || day === 6) return true;
+  const mins = d.getUTCHours() * 60 + d.getUTCMinutes();
+  return mins < OPEN_MIN || mins >= CLOSE_MIN;
+}
+
 const p2 = n => String(n).padStart(2, "0");
 const fmtTime = ts => { const p = wibParts(ts); return p2(p.h) + ":" + p2(p.mi); };
 const fmtDay = ts => { const p = wibParts(ts); return p.d + " " + MONTHS[p.mo]; };
@@ -709,7 +730,7 @@ function makePanel(code) {
 
   sel.innerHTML = DATA.currencies.map(c => `<option>${c}</option>`).join("");
   sel.value = cur;
-  sel.addEventListener("change", () => { cur = sel.value; syncControls(); renderAll(); });
+  sel.addEventListener("change", () => { cur = sel.value; syncControls(); renderAll(); savePrefs(); });
 
   // Hover is stored as a timestamp, not an index, so the second panel lands on
   // the same moment even if it were ever sampled differently.
@@ -753,9 +774,14 @@ function makePanel(code) {
     const pad = (hi - lo) * 0.10; lo -= pad; hi += pad;
 
     const t = rec.t;
-    const t0 = t[idx[0]], t1 = t[idx[idx.length - 1]];
+    // Ordinal x-axis: equal width per point, not per elapsed hour. Closed hours
+    // are sampled less often (hourly vs every 15 min), so they compress on their
+    // own and the trading day fills the width — a session chart, the way Moomoo
+    // and TradingView draw one — with no 15-hour overnight block eating space.
+    const rank = new Map();
+    idx.forEach((i, k) => rank.set(i, k));
     const xOf = i => idx.length === 1 ? M.l + iw / 2
-      : M.l + (t1 === t0 ? (idx.indexOf(i) / (idx.length - 1)) : (t[i] - t0) / (t1 - t0)) * iw;
+      : M.l + (rank.get(i) / (idx.length - 1)) * iw;
     const yOf = v => M.t + (1 - (v - lo) / (hi - lo)) * ih;
 
     const parts = [];
@@ -767,7 +793,29 @@ function makePanel(code) {
       parts.push(`<text x="${M.l + iw + 8}" y="${(y + 3.5).toFixed(1)}">${fmt(v)}</text>`);
     }
 
-    const spanSec = t1 - t0;
+    // 1D only: shade the closed spans (nights, weekends) and label the first
+    // one, so the trading day reads at a glance. Longer ranges skip it — they
+    // would be mostly grey, and the ordinal axis already keeps closed hours thin.
+    if (state.range === "1D") {
+      let s0 = -1, labelled = false;
+      const shade = (a, b) => {
+        const x1 = a <= 0 ? M.l : (xOf(idx[a - 1]) + xOf(idx[a])) / 2;
+        const x2 = b >= idx.length - 1 ? M.l + iw : (xOf(idx[b]) + xOf(idx[b + 1])) / 2;
+        parts.push(`<rect x="${x1.toFixed(1)}" y="${M.t}" width="${(x2 - x1).toFixed(1)}" height="${ih}" fill="#8b97ab" fill-opacity=".06"/>`);
+        if (!labelled && x2 - x1 > 34) {
+          parts.push(`<text x="${((x1 + x2) / 2).toFixed(1)}" y="${(M.t + 13).toFixed(1)}" text-anchor="middle" fill="#7a879e" style="font-size:10px;letter-spacing:.06em">Closed</text>`);
+          labelled = true;
+        }
+      };
+      for (let k = 0; k < idx.length; k++) {
+        const closed = isClosed(t[idx[k]]);
+        if (closed && s0 < 0) s0 = k;
+        else if (!closed && s0 >= 0) { shade(s0, k - 1); s0 = -1; }
+      }
+      if (s0 >= 0) shade(s0, idx.length - 1);
+    }
+
+    const spanSec = t[idx[idx.length - 1]] - t[idx[0]];
     const want = Math.max(2, Math.min(7, Math.floor(iw / 108)));
     const step = Math.max(1, Math.floor((idx.length - 1) / (want - 1)) || 1);
     const label = spanSec > 86400 * 2 ? fmtDay : fmtTime;
@@ -781,38 +829,24 @@ function makePanel(code) {
       parts.push(`<text x="${x.toFixed(1)}" y="${M.t + ih + 17}" text-anchor="${anchor}">${txt}</text>`);
     }
 
-    // A missing scrape leaves no row at all, so an outage shows up as a jump in
-    // time rather than a null. Anything well past the normal cadence gets
-    // treated as a break: drawing through it would invent a smooth move across
-    // hours the scraper never actually observed.
-    const deltas = [];
-    for (let k = 1; k < idx.length; k++) deltas.push(t[idx[k]] - t[idx[k - 1]]);
-    deltas.sort((a, b) => a - b);
-    const cadence = deltas.length ? deltas[Math.floor(deltas.length / 2)] : 0;
-    const gapLimit = cadence > 0 ? cadence * 3 : Infinity;
-
-    // Shade the no-data spans behind everything else. A time gap is the same for
-    // every series — nobody was scraped during an outage — so it is drawn once,
-    // per span, across the full plot height rather than per line.
-    for (let k = 1; k < idx.length; k++) {
-      if (t[idx[k]] - t[idx[k - 1]] > gapLimit) {
-        const x1 = xOf(idx[k - 1]), x2 = xOf(idx[k]);
-        parts.push(`<rect x="${x1.toFixed(1)}" y="${M.t}" width="${(x2 - x1).toFixed(1)}" height="${ih}" fill="#8b97ab" fill-opacity=".05"/>`);
-      }
-    }
+    // The scraper never spaces reads more than an hour apart — hourly even when
+    // closed — so any jump past ~90 min is a genuine outage (the process was
+    // down), not the normal overnight cadence. That is the only thing that
+    // breaks a line; closed hours have data and draw straight through.
+    const OUTAGE = 90 * 60;
 
     const dots = idx.length <= 60;
     const GAP = "#6b7890";  // grey for the bridge across a gap — clearly not a rate line
     for (const s of series) {
       const [buy, sell] = rec[s.key], c = COLORS[s.key];
 
-      // Break the series into contiguous runs — a run ends on a null or a time
-      // gap — then draw each, and bridge the breaks separately.
+      // Break the series into contiguous runs — a run ends on a null or a real
+      // outage — then draw each, and bridge the breaks separately.
       const runs = [];
       let run = [];
       for (const i of idx) {
         if (buy[i] == null || sell[i] == null) { if (run.length) runs.push(run), run = []; continue; }
-        if (run.length && t[i] - t[run[run.length - 1]] > gapLimit) runs.push(run), run = [];
+        if (run.length && t[i] - t[run[run.length - 1]] > OUTAGE) runs.push(run), run = [];
         run.push(i);
       }
       if (run.length) runs.push(run);
@@ -848,6 +882,28 @@ function makePanel(code) {
         parts.push(`<rect x="${M.l + iw + 2}" y="${(y - 8).toFixed(1)}" width="${M.r - 6}" height="16" rx="3" fill="${c}" fill-opacity=".16"/>`);
         parts.push(`<text x="${M.l + iw + 8}" y="${(y + 3.5).toFixed(1)}" fill="${c}" style="font-weight:700">${fmt(arm[last])}</text>`);
       }
+    }
+
+    // High and low of the headline line over the visible range. Only the
+    // headline series/side, so three series do not litter the chart with six
+    // markers. Skipped while hovering, when the crosshair is doing the reading.
+    const hm = state.metric;
+    if (state.on[hm.key] && availableSeries(cur).some(s => s.key === hm.key) && state.hoverT == null) {
+      const arm = rec[hm.key][hm.side];
+      let hiI = -1, loI = -1;
+      for (const i of idx) {
+        if (arm[i] == null) continue;
+        if (hiI < 0 || arm[i] > arm[hiI]) hiI = i;
+        if (loI < 0 || arm[i] < arm[loI]) loI = i;
+      }
+      const mark = (i, above) => {
+        if (i < 0) return;
+        const x = xOf(i), y = yOf(arm[i]), dy = above ? -9 : 15;
+        const anchor = x < M.l + 30 ? "start" : x > M.l + iw - 30 ? "end" : "middle";
+        parts.push(`<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.6" fill="#e6edf7"/>`);
+        parts.push(`<text x="${x.toFixed(1)}" y="${(y + dy).toFixed(1)}" text-anchor="${anchor}" fill="#b9c4d6" style="font-size:10px;font-weight:600">${fmt(arm[i])}</text>`);
+      };
+      if (hiI !== loI) { mark(hiI, true); mark(loI, false); }
     }
 
     const hv = hoverIndex();
@@ -1102,7 +1158,7 @@ function buildMetric() {
     state.metric = { key, side: +side };
     // headlining a series nobody can see is a dead number, so switch it on
     if (!state.on[key]) { state.on[key] = true; syncControls(); }
-    renderAll();
+    renderAll(); savePrefs();
   });
 }
 
@@ -1141,7 +1197,7 @@ function syncControls() {
       state.range = b.dataset.r;
       el("ranges").querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b));
       state.hoverT = null; panels.forEach(p => p.hideTip());
-      renderAll();
+      renderAll(); savePrefs();
     });
   });
 
@@ -1170,6 +1226,7 @@ function setSplit(on) {
   state.hoverT = null;
   syncControls();
   renderAll();
+  savePrefs();
 }
 
 /* ---------- keeping itself current ---------------------------------------- *
@@ -1240,19 +1297,74 @@ function scheduleRefresh() {
   }, msToNextSlot());
 }
 
+/* ---------- market status + remembering the view -------------------------- */
+
+const DAY_ABBR = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+function nextOpenLabel(nowSec) {
+  const d = new Date((nowSec + 7 * 3600) * 1000);
+  const day = d.getUTCDay(), mins = d.getUTCHours() * 60 + d.getUTCMinutes();
+  if (day >= 1 && day <= 5 && mins < OPEN_MIN) return "08:00 WIB";
+  let add = 1, wd = (day + 1) % 7;
+  while (wd === 0 || wd === 6) { add++; wd = (wd + 1) % 7; }
+  return DAY_ABBR[(day + add) % 7] + " 08:00";
+}
+
+function updateMarket() {
+  const m = el("market");
+  const closed = isClosed(Date.now() / 1000);
+  m.hidden = false;
+  m.className = "market " + (closed ? "closed" : "open");
+  m.textContent = closed ? "Closed · opens " + nextOpenLabel(Date.now() / 1000) : "Market open";
+}
+
+const PREFS_KEY = "bca-forex-view";
+
+function savePrefs() {
+  try {
+    localStorage.setItem(PREFS_KEY, JSON.stringify({
+      range: state.range, metric: state.metric, split: state.split,
+      currencies: panels.map(p => p.currency),
+    }));
+  } catch (_) { /* private mode / storage full — remembering is a nicety */ }
+}
+
+function loadPrefs() {
+  try { return JSON.parse(localStorage.getItem(PREFS_KEY)) || {}; }
+  catch (_) { return {}; }
+}
+
 function init() {
   if (!DATA.currencies.length) {
     document.querySelector(".wrap").innerHTML =
       "<p style='color:#8b97ab'>The database has no rates yet. Run <code>python -m bca_forex once</code> and rebuild this chart.</p>";
     return;
   }
+
+  // Restore the last view, validating everything — a saved currency or metric
+  // may have vanished since, and a stale range must not wedge the page.
+  const saved = loadPrefs();
+  if (saved.range && RANGES.some(r => r.k === saved.range)) state.range = saved.range;
+  if (saved.metric && DATA.series.some(s => s.key === saved.metric.key) &&
+      (saved.metric.side === 0 || saved.metric.side === 1)) state.metric = saved.metric;
+
   buildMetric();
 
-  const first = makePanel(pick("USD", null));
+  const savedCur = saved.currencies || [];
+  const c0 = DATA.currencies.includes(savedCur[0]) ? savedCur[0] : pick("USD", null);
+  const first = makePanel(c0);
   panels.push(first);
   el("panels").appendChild(first.root);
 
   el("split").addEventListener("click", () => setSplit(!state.split));
+
+  if (saved.split) {
+    setSplit(true);
+    if (DATA.currencies.includes(savedCur[1])) { panels[1].currency = savedCur[1]; savePrefs(); }
+  }
+
+  updateMarket();
+  setInterval(updateMarket, 60000);   // flip at 08:00 / 17:00 without a reload
 
   el("stamp").textContent = DATA.pageUpdated ? "· BCA page: " + DATA.pageUpdated : "";
   el("fails").innerHTML = DATA.failedRuns
