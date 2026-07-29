@@ -25,6 +25,8 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
+from . import __version__
+
 #: Chart series -> the (buy, sell) columns behind it, in display order.
 SERIES: tuple[tuple[str, str, str, str], ...] = (
     ("e_rate", "e-Rate", "e_rate_buy", "e_rate_sell"),
@@ -311,6 +313,7 @@ def build(
         .replace("/*__DATA__*/null", json.dumps(payload, separators=(",", ":")))
         .replace("<!--__LOGO__-->", logo_markup(logo))
         .replace("<!--__PWA__-->", PWA_HEAD if pwa else "")
+        .replace("<!--__VERSION__-->", __version__)
     )
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(html, encoding="utf-8")
@@ -363,6 +366,11 @@ TEMPLATE = r"""<!DOCTYPE html>
   header.brand .t {
     font-size: 16px; font-weight: 700; letter-spacing: -.2px;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  header.brand .t .ver {
+    font-size: 10.5px; font-weight: 600; color: var(--muted); letter-spacing: .02em;
+    border: 1px solid var(--line); border-radius: 999px; padding: 2px 7px;
+    margin-left: 7px; vertical-align: middle;
   }
   header.brand .s { color: var(--muted); font-size: 11.5px; }
   header.brand a.src {
@@ -569,7 +577,7 @@ TEMPLATE = r"""<!DOCTYPE html>
   <header class="brand">
     <span class="logo"><!--__LOGO__--></span>
     <div class="who">
-      <div class="t">BCA Forex Rates</div>
+      <div class="t">BCA Forex Rates <span class="ver">v<!--__VERSION__--></span></div>
       <div class="s">Kurs history &middot; Bank Central Asia</div>
     </div>
     <span class="market" id="market" hidden></span>
@@ -625,9 +633,10 @@ function wibParts(ts) {
   return { y: d.getUTCFullYear(), mo: d.getUTCMonth(), d: d.getUTCDate(),
            h: d.getUTCHours(), mi: d.getUTCMinutes() };
 }
-// Trading window, mirrored from the scraper: Mon-Fri 08:00-17:00 WIB. A display
-// constant — the chart decides what to grey, independent of when it was scraped.
-const OPEN_MIN = 8 * 60, CLOSE_MIN = 17 * 60;
+// Trading window the chart greys out: Mon-Fri 08:00-16:00 WIB, so anything from
+// 16:00 through 08:00 the next morning reads as closed. A display constant — the
+// chart decides what to grey, independent of the scraper's own sampling window.
+const OPEN_MIN = 8 * 60, CLOSE_MIN = 16 * 60;
 function isClosed(ts) {
   const d = new Date((ts + 7 * 3600) * 1000);
   const day = d.getUTCDay();                 // 0 Sun .. 6 Sat
@@ -726,11 +735,30 @@ function makePanel(code) {
   const q = s => root.querySelector(s);
   const svg = q(".chart"), tip = q(".tip"), notice = q(".notice"), sel = q("select.cur");
   const priceEl = q(".price"), chgEl = q(".chg"), subEl = q(".sub"), body = q("tbody");
-  let cur = code, view = null;
+  let cur = code, view = null, pan = 0;   // pan: points the window is slid back
 
   sel.innerHTML = DATA.currencies.map(c => `<option>${c}</option>`).join("");
   sel.value = cur;
-  sel.addEventListener("change", () => { cur = sel.value; syncControls(); renderAll(); savePrefs(); });
+  sel.addEventListener("change", () => { cur = sel.value; pan = 0; syncControls(); renderAll(); savePrefs(); });
+
+  // The visible slice, plus any pan. Pan slides an equal-width window back
+  // through the stored history — 0 keeps it anchored to the newest point, the
+  // default — and is re-clamped here so shrinking data can never strand it.
+  function idxWindow() {
+    const base = visibleIndices(cur, state.range);
+    const n = (DATA.data[cur] || { t: [] }).t.length, width = base.length;
+    const maxPan = Math.max(0, n - width);
+    if (pan > maxPan) pan = maxPan;
+    if (pan < 0) pan = 0;
+    if (!pan || !width) return base;
+    const end = (n - 1) - pan, start = end - (width - 1), out = [];
+    for (let i = start; i <= end; i++) out.push(i);
+    return out;
+  }
+  function canPan() {
+    const base = visibleIndices(cur, state.range);
+    return (DATA.data[cur] || { t: [] }).t.length - base.length > 0;
+  }
 
   // Hover is stored as a timestamp, not an index, so the second panel lands on
   // the same moment even if it were ever sampled differently.
@@ -738,7 +766,7 @@ function makePanel(code) {
     if (state.hoverT == null) return -1;
     const t = (DATA.data[cur] || { t: [] }).t;
     let best = -1, bd = Infinity;
-    for (const i of visibleIndices(cur, state.range)) {
+    for (const i of idxWindow()) {
       const d = Math.abs(t[i] - state.hoverT);
       if (d < bd) { bd = d; best = i; }
     }
@@ -747,7 +775,7 @@ function makePanel(code) {
 
   function render() {
     const rec = DATA.data[cur];
-    const idx = visibleIndices(cur, state.range);
+    const idx = idxWindow();
     const series = activeSeries(cur);
     const W = svg.clientWidth || 700, H = svg.clientHeight || 380;
     const M = { t: 14, r: 66, b: 26, l: 10 };
@@ -786,11 +814,39 @@ function makePanel(code) {
 
     const parts = [];
 
+    // Current-value flags for the headlined side, de-collided up front so two
+    // near-equal rates (18,000 and 18,010) do not stack their labels on top of
+    // each other. Computing them here also lets a gridline number sitting under
+    // a flag be dropped, rather than bleeding through it.
+    const FLAG_H = 16, flags = [];
+    for (const s of series) {
+      const arm = rec[s.key][state.metric.side];
+      const last = [...idx].reverse().find(i => arm[i] != null);
+      if (last != null) flags.push({ c: COLORS[s.key], v: arm[last], y: yOf(arm[last]) });
+    }
+    flags.sort((a, b) => a.y - b.y);
+    for (let i = 1; i < flags.length; i++)
+      if (flags[i].y - flags[i - 1].y < FLAG_H) flags[i].y = flags[i - 1].y + FLAG_H;
+    // If spreading pushed the stack past an edge, nudge it back inside the plot.
+    const fTop = M.t + 8, fBot = M.t + ih - 8;
+    if (flags.length && flags[flags.length - 1].y > fBot) {
+      flags[flags.length - 1].y = fBot;
+      for (let i = flags.length - 2; i >= 0; i--)
+        if (flags[i + 1].y - flags[i].y < FLAG_H) flags[i].y = flags[i + 1].y - FLAG_H;
+    }
+    if (flags.length && flags[0].y < fTop) {
+      flags[0].y = fTop;
+      for (let i = 1; i < flags.length; i++)
+        if (flags[i].y - flags[i - 1].y < FLAG_H) flags[i].y = flags[i - 1].y + FLAG_H;
+    }
+
     for (const v of niceTicks(lo, hi, Math.max(3, Math.min(8, Math.round(ih / 54))))) {
       const y = yOf(v);
       if (y < M.t - 1 || y > M.t + ih + 1) continue;
       parts.push(`<line x1="${M.l}" y1="${y.toFixed(1)}" x2="${M.l + iw}" y2="${y.toFixed(1)}" stroke="#1c2433"/>`);
-      parts.push(`<text x="${M.l + iw + 8}" y="${(y + 3.5).toFixed(1)}">${fmt(v)}</text>`);
+      // Drop the axis number when a value flag already occupies that row.
+      if (!flags.some(f => Math.abs(f.y - y) < 9))
+        parts.push(`<text x="${M.l + iw + 8}" y="${(y + 3.5).toFixed(1)}">${fmt(v)}</text>`);
     }
 
     // 1D only: shade the closed spans (nights, weekends) and label the first
@@ -874,14 +930,12 @@ function makePanel(code) {
         }
       }
 
-      // last-value flag on the price axis, for the side being headlined
-      const arm = rec[s.key][state.metric.side];
-      const last = [...idx].reverse().find(i => arm[i] != null);
-      if (last != null) {
-        const y = yOf(arm[last]);
-        parts.push(`<rect x="${M.l + iw + 2}" y="${(y - 8).toFixed(1)}" width="${M.r - 6}" height="16" rx="3" fill="${c}" fill-opacity=".16"/>`);
-        parts.push(`<text x="${M.l + iw + 8}" y="${(y + 3.5).toFixed(1)}" fill="${c}" style="font-weight:700">${fmt(arm[last])}</text>`);
-      }
+    }
+
+    // The de-collided value flags, drawn over the lines so they stay readable.
+    for (const f of flags) {
+      parts.push(`<rect x="${M.l + iw + 2}" y="${(f.y - 8).toFixed(1)}" width="${M.r - 6}" height="16" rx="3" fill="${f.c}" fill-opacity=".16"/>`);
+      parts.push(`<text x="${M.l + iw + 8}" y="${(f.y + 3.5).toFixed(1)}" fill="${f.c}" style="font-weight:700">${fmt(f.v)}</text>`);
     }
 
     // High and low of the headline line over the visible range. Only the
@@ -918,7 +972,7 @@ function makePanel(code) {
     }
 
     svg.innerHTML = parts.join("");
-    view = { idx, xOf };
+    view = { idx, xOf, iw, width: idx.length };
 
     const n = idx.length;
     notice.hidden = n > 3;
@@ -1072,17 +1126,46 @@ function makePanel(code) {
     showTip(clientX);
   }
 
-  // Dragging the chart should still scroll the page — it is most of the screen
-  // on a phone — so a touch only takes the crosshair once it has shown it means
-  // to. Two ways to qualify: hold still briefly, or move sideways. The second
-  // matters because holding and then swiping in one motion is the natural
-  // gesture, and waiting out a timer mid-swipe feels broken.
+  /* Two touch gestures share the chart, and the job is telling them apart
+   * without stealing the page's own vertical scroll:
+   *
+   *   drag sideways   -> pan the timeline back and forth through history
+   *   press and hold  -> scrub, showing the crosshair and detail tooltip
+   *   drag upwards    -> left to the browser, so the page still scrolls
+   *
+   * `mode` latches to the FIRST gesture to qualify and nothing else fires until
+   * the finger lifts, so a pan can never trip the hold-to-scrub or vice versa —
+   * that mutual exclusion is what keeps the two from colliding. A press that has
+   * not moved for HOLD_MS becomes a scrub; one that moves sideways first (when
+   * there is history to pan to) becomes a pan.
+   */
   const HOLD_MS = 260, SLOP = 10;
-  let armed = false, holdTimer = null, pid = null, sx = 0, sy = 0;
+  let mode = null;              // null | "pan" | "scrub"
+  let holdTimer = null, pid = null, sx = 0, sy = 0, panStart = 0;
 
-  function arm(clientX) {
+  function pointsPerPx() {
+    return (view && view.width > 1 && view.iw) ? (view.width - 1) / view.iw : 0;
+  }
+  // Drag right -> older data slides in from the left (pan grows), the way
+  // grabbing and pulling the paper would move it.
+  function panTo(clientX) {
+    const ppx = pointsPerPx();
+    if (!ppx) return;
+    pan = panStart + (clientX - sx) * ppx;   // idxWindow() clamps it to the ends
+    render();
+  }
+
+  function beginPan() {
     clearTimeout(holdTimer);
-    armed = true;
+    mode = "pan"; panStart = pan;
+    state.hoverT = null; hideTip();
+    // Capture so the finger can wander off the chart and the pan still tracks.
+    try { svg.setPointerCapture(pid); } catch (_) {}
+  }
+
+  function beginScrub(clientX) {
+    clearTimeout(holdTimer);
+    mode = "scrub";
     // Capture, so the finger can leave the chart — off the top, onto the stats
     // table — and the scrub still tracks instead of dying mid-gesture.
     try { svg.setPointerCapture(pid); } catch (_) {}
@@ -1094,45 +1177,64 @@ function makePanel(code) {
     if (navigator.vibrate) navigator.vibrate(8);
   }
 
-  function disarm() {
+  function endGesture() {
     clearTimeout(holdTimer);
-    if (armed) {
-      armed = false;
-      svg.classList.remove("scrubbing");
-      try { svg.releasePointerCapture(pid); } catch (_) {}
-      clearHover();
-    }
-    pid = null;
+    const wasScrub = mode === "scrub";
+    if (mode) { try { svg.releasePointerCapture(pid); } catch (_) {} }
+    svg.classList.remove("scrubbing");
+    mode = null; pid = null;
+    if (wasScrub) clearHover();          // panning just leaves the view put
   }
 
   svg.addEventListener("pointerdown", e => {
-    if (fromMouse(e)) return;
-    pid = e.pointerId; sx = e.clientX; sy = e.clientY; armed = false;
+    if (fromMouse(e)) { pid = e.pointerId; sx = e.clientX; sy = e.clientY; panStart = pan; mode = null; return; }
+    pid = e.pointerId; sx = e.clientX; sy = e.clientY; mode = null;
     clearTimeout(holdTimer);
-    holdTimer = setTimeout(() => arm(sx), HOLD_MS);
+    holdTimer = setTimeout(() => { if (pid === e.pointerId && mode === null) beginScrub(sx); }, HOLD_MS);
   });
 
   svg.addEventListener("pointermove", e => {
-    if (fromMouse(e)) { moveTo(e.clientX); return; }   // hover, no button needed
+    if (fromMouse(e)) {
+      if (e.buttons & 1) {                 // button held: drag to pan
+        if (mode !== "pan") {
+          mode = "pan"; sx = e.clientX; panStart = pan; state.hoverT = null; hideTip();
+          try { svg.setPointerCapture(pid); } catch (_) {}
+        }
+        panTo(e.clientX);
+      } else {
+        if (mode === "pan") mode = null;
+        moveTo(e.clientX);                 // no button: plain hover scrub
+      }
+      return;
+    }
     if (e.pointerId !== pid) return;
 
-    if (!armed) {
-      const dx = Math.abs(e.clientX - sx), dy = Math.abs(e.clientY - sy);
-      if (dx > SLOP && dx > dy) arm(e.clientX);        // sideways: scrubbing
-      else if (dy > SLOP) { clearTimeout(holdTimer); pid = null; }  // upwards: scrolling
+    if (mode === null) {
+      const dx = e.clientX - sx, dy = e.clientY - sy;
+      if (Math.abs(dx) > SLOP && Math.abs(dx) > Math.abs(dy)) {
+        // Sideways: pan if there is history off-screen, otherwise fall back to
+        // scrubbing so a swipe is never a dead gesture.
+        if (canPan()) { beginPan(); panTo(e.clientX); } else beginScrub(e.clientX);
+      } else if (Math.abs(dy) > SLOP) { clearTimeout(holdTimer); pid = null; }  // upwards: page scroll
       return;
     }
     e.preventDefault();
-    moveTo(e.clientX);
+    if (mode === "pan") panTo(e.clientX); else moveTo(e.clientX);
   }, { passive: false });
 
-  // Release closes it, the way lifting a mouse off the chart does.
-  svg.addEventListener("pointerup", e => { if (!fromMouse(e)) disarm(); });
-  svg.addEventListener("pointercancel", e => { if (!fromMouse(e)) disarm(); });
-  svg.addEventListener("pointerleave", e => { if (fromMouse(e)) clearHover(); });
+  // Lifting the finger ends whatever was going on; a scrub also closes its tip.
+  svg.addEventListener("pointerup", e => {
+    if (fromMouse(e)) { if (mode) { try { svg.releasePointerCapture(pid); } catch (_) {} } mode = null; pid = null; }
+    else endGesture();
+  });
+  svg.addEventListener("pointercancel", e => {
+    if (fromMouse(e)) { mode = null; pid = null; } else endGesture();
+  });
+  svg.addEventListener("pointerleave", e => { if (fromMouse(e) && mode !== "pan") clearHover(); });
 
   const api = {
     root, render, hideTip,
+    resetPan() { pan = 0; },
     get currency() { return cur; },
     set currency(v) { cur = v; sel.value = v; },
   };
@@ -1196,7 +1298,7 @@ function syncControls() {
     b.addEventListener("click", () => {
       state.range = b.dataset.r;
       el("ranges").querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b));
-      state.hoverT = null; panels.forEach(p => p.hideTip());
+      state.hoverT = null; panels.forEach(p => { p.resetPan(); p.hideTip(); });
       renderAll(); savePrefs();
     });
   });
