@@ -56,13 +56,13 @@ Add `--db <path>` to any of them to use a different database file.
 
 Two cadences, Indonesian time:
 
-- **Trading hours — Mon–Fri 08:00–17:00 WIB:** every 15 minutes (08:00, 08:15,
+- **Trading hours — Mon–Fri 08:00–16:00 WIB:** every 15 minutes (08:00, 08:15,
   08:30, 08:45…), when BCA actually moves its rates.
-- **Everything else — nights and weekends:** once an hour, on the hour. Some
-  currencies (CNH, say) still drift when the counters are shut, so going dark
-  would lose real movement; but 15-minute sampling of a near-static page is
-  wasted rows. 17:00 is caught as the first hourly slot, so the day's close is
-  still recorded.
+- **Everything else — after 16:00, nights and weekends:** once an hour, on the
+  hour. Some currencies (CNH, say) still drift when the counters are shut, so
+  going dark would lose real movement; but 15-minute sampling of a near-static
+  page is wasted rows. 16:00 is caught as the first hourly slot, so the day's
+  close is still recorded.
 
 - **Pinned to the clock, not to start-up.** A plain "sleep" loop lands on
   whatever minute the machine booted on and moves on every restart, so the
