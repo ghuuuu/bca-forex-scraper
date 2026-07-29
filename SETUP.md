@@ -157,10 +157,10 @@ Every one takes `--db`.
 
 Two cadences, Indonesian time:
 
-- **Trading hours (Mon–Fri 08:00–17:00 WIB):** every 15 minutes.
-- **Nights and weekends:** once an hour. Some currencies still drift when the
-  counters are shut, so it does not go fully dark; 17:00 lands as the first
-  hourly slot, capturing the close.
+- **Trading hours (Mon–Fri 08:00–16:00 WIB):** every 15 minutes.
+- **After 16:00, nights and weekends:** once an hour. Some currencies still
+  drift when the counters are shut, so it does not go fully dark; 16:00 lands
+  as the first hourly slot, capturing the close.
 
 Times are computed from a **fixed UTC+7** inside the code, not from the system
 clock's timezone. Indonesia has no daylight saving, so the offset is correct

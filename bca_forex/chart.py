@@ -25,6 +25,8 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
+from . import __version__
+
 #: Chart series -> the (buy, sell) columns behind it, in display order.
 SERIES: tuple[tuple[str, str, str, str], ...] = (
     ("e_rate", "e-Rate", "e_rate_buy", "e_rate_sell"),
@@ -311,6 +313,7 @@ def build(
         .replace("/*__DATA__*/null", json.dumps(payload, separators=(",", ":")))
         .replace("<!--__LOGO__-->", logo_markup(logo))
         .replace("<!--__PWA__-->", PWA_HEAD if pwa else "")
+        .replace("<!--__VERSION__-->", __version__)
     )
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(html, encoding="utf-8")
@@ -363,6 +366,11 @@ TEMPLATE = r"""<!DOCTYPE html>
   header.brand .t {
     font-size: 16px; font-weight: 700; letter-spacing: -.2px;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  header.brand .t .ver {
+    font-size: 10.5px; font-weight: 600; color: var(--muted); letter-spacing: .02em;
+    border: 1px solid var(--line); border-radius: 999px; padding: 2px 7px;
+    margin-left: 7px; vertical-align: middle;
   }
   header.brand .s { color: var(--muted); font-size: 11.5px; }
   header.brand a.src {
@@ -569,7 +577,7 @@ TEMPLATE = r"""<!DOCTYPE html>
   <header class="brand">
     <span class="logo"><!--__LOGO__--></span>
     <div class="who">
-      <div class="t">BCA Forex Rates</div>
+      <div class="t">BCA Forex Rates <span class="ver">v<!--__VERSION__--></span></div>
       <div class="s">Kurs history &middot; Bank Central Asia</div>
     </div>
     <span class="market" id="market" hidden></span>

@@ -1,6 +1,6 @@
 """The slot maths — the part that must not drift.
 
-Trading hours (Mon-Fri 08:00-17:00 WIB) run every 15 min; outside them, hourly.
+Trading hours (Mon-Fri 08:00-16:00 WIB) run every 15 min; outside them, hourly.
 2026-07-27 is a Monday and 2026-07-25/26 the weekend before it, which the
 weekday cases below rely on.
 """
@@ -25,11 +25,11 @@ class TestIsActive(unittest.TestCase):
     def test_trading_hours_on_a_weekday(self):
         self.assertTrue(is_active(at(8, 0)))
         self.assertTrue(is_active(at(12, 30)))
-        self.assertTrue(is_active(at(16, 59)))
+        self.assertTrue(is_active(at(15, 59)))
 
     def test_the_edges(self):
         self.assertFalse(is_active(at(7, 59)))    # before open
-        self.assertFalse(is_active(at(17, 0)))    # 17:00 is closed (caught hourly)
+        self.assertFalse(is_active(at(16, 0)))    # 16:00 is closed (caught hourly)
 
     def test_weekends_are_always_closed(self):
         self.assertFalse(is_active(at(12, 0, day=25)))  # Saturday
@@ -57,9 +57,9 @@ class TestNextSlotTradingHours(unittest.TestCase):
 
 class TestNextSlotClosed(unittest.TestCase):
     def test_hourly_overnight(self):
-        # after the 16:45 trading slot, 17:00 is the first hourly one (the close)
-        self.assertEqual(next_slot(at(16, 45)), at(17, 0))
-        self.assertEqual(next_slot(at(17, 0)), at(18, 0))
+        # after the 15:45 trading slot, 16:00 is the first hourly one (the close)
+        self.assertEqual(next_slot(at(15, 45)), at(16, 0))
+        self.assertEqual(next_slot(at(16, 0)), at(17, 0))
         self.assertEqual(next_slot(at(18, 30)), at(19, 0))
 
     def test_quarter_marks_are_skipped_when_closed(self):
@@ -81,8 +81,8 @@ class TestNextSlotWeekend(unittest.TestCase):
         self.assertEqual(next_slot(at(10, 0, day=25)), at(11, 0, day=25))
 
     def test_friday_close_into_the_weekend(self):
-        # Fri 24th 16:45 -> 17:00 (hourly close), then hourly through the weekend
-        self.assertEqual(next_slot(at(16, 45, day=24)), at(17, 0, day=24))
+        # Fri 24th 15:45 -> 16:00 (hourly close), then hourly through the weekend
+        self.assertEqual(next_slot(at(15, 45, day=24)), at(16, 0, day=24))
         self.assertEqual(next_slot(at(23, 0, day=24)), datetime(2026, 7, 25, 0, 0, tzinfo=WIB))
 
     def test_monday_open_after_the_weekend(self):
