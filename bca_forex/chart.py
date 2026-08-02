@@ -774,6 +774,9 @@ function makePanel(code) {
   }
 
   function render() {
+    // Clear any leftover pan translate; panTo re-applies it right after when a
+    // drag is mid-flight, and every other caller wants a clean, un-shifted plot.
+    svg.style.transform = "";
     const rec = DATA.data[cur];
     const idx = idxWindow();
     const series = activeSeries(cur);
@@ -891,7 +894,6 @@ function makePanel(code) {
     // breaks a line; closed hours have data and draw straight through.
     const OUTAGE = 90 * 60;
 
-    const dots = idx.length <= 60;
     const GAP = "#6b7890";  // grey for the bridge across a gap — clearly not a rate line
     for (const s of series) {
       const [buy, sell] = rec[s.key], c = COLORS[s.key];
@@ -924,9 +926,13 @@ function makePanel(code) {
           parts.push(`<path d="M${up.join("L")}" fill="none" stroke="${c}" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>`);
           parts.push(`<path d="M${run.map(i => `${xOf(i).toFixed(1)},${yOf(sell[i]).toFixed(1)}`).join("L")}" fill="none" stroke="${c}" stroke-width="1.5" stroke-dasharray="5 3.5" stroke-linecap="round"/>`);
         }
-        if (dots) for (const i of run) {
-          parts.push(`<circle cx="${xOf(i).toFixed(1)}" cy="${yOf(buy[i]).toFixed(1)}" r="2.8" fill="${c}"/>`);
-          parts.push(`<circle cx="${xOf(i).toFixed(1)}" cy="${yOf(sell[i]).toFixed(1)}" r="2.8" fill="${c}" fill-opacity=".45" stroke="${c}" stroke-width="1"/>`);
+        // No per-point dots — on a dense line they are just clutter. The one
+        // exception is a lone sample between gaps: it has no line to sit on, so
+        // without a mark it would vanish entirely. Keep a dot only for those.
+        if (run.length === 1) {
+          const i = run[0];
+          parts.push(`<circle cx="${xOf(i).toFixed(1)}" cy="${yOf(buy[i]).toFixed(1)}" r="2.6" fill="${c}"/>`);
+          parts.push(`<circle cx="${xOf(i).toFixed(1)}" cy="${yOf(sell[i]).toFixed(1)}" r="2.6" fill="${c}" fill-opacity=".45" stroke="${c}" stroke-width="1"/>`);
         }
       }
 
@@ -1148,11 +1154,26 @@ function makePanel(code) {
   }
   // Drag right -> older data slides in from the left (pan grows), the way
   // grabbing and pulling the paper would move it.
+  //
+  // The window can only ever be whole points — a fractional index has no data
+  // behind it and would blank the slice — but the drag still has to feel
+  // continuous. So the window snaps to the nearest whole point while the drawn
+  // SVG is translated by the leftover fraction of a point. Between whole-point
+  // steps the plot just slides under the finger with no redraw; each time the
+  // drag crosses a point boundary we redraw one point older/newer and the
+  // leftover flips sign, so the redraw and the slide add up to smooth motion.
   function panTo(clientX) {
     const ppx = pointsPerPx();
     if (!ppx) return;
-    pan = panStart + (clientX - sx) * ppx;   // idxWindow() clamps it to the ends
-    render();
+    const wantF = panStart + (clientX - sx) * ppx;   // fractional points slid back
+    const want = Math.round(wantF);
+    if (want !== pan) { pan = want; render(); }       // idxWindow() clamps to the ends
+    // render() may have re-clamped pan at either end; measure the leftover
+    // against the window actually drawn, and cap it at a point so hitting an
+    // end just stops instead of dragging the whole plot off into empty space.
+    const pxPerPoint = view && view.width > 1 ? view.iw / (view.width - 1) : 0;
+    const resid = Math.max(-1, Math.min(1, wantF - pan));
+    svg.style.transform = pxPerPoint ? `translateX(${(resid * pxPerPoint).toFixed(2)}px)` : "";
   }
 
   function beginPan() {
@@ -1182,6 +1203,7 @@ function makePanel(code) {
     const wasScrub = mode === "scrub";
     if (mode) { try { svg.releasePointerCapture(pid); } catch (_) {} }
     svg.classList.remove("scrubbing");
+    svg.style.transform = "";            // snap to the whole-point window
     mode = null; pid = null;
     if (wasScrub) clearHover();          // panning just leaves the view put
   }
@@ -1224,11 +1246,11 @@ function makePanel(code) {
 
   // Lifting the finger ends whatever was going on; a scrub also closes its tip.
   svg.addEventListener("pointerup", e => {
-    if (fromMouse(e)) { if (mode) { try { svg.releasePointerCapture(pid); } catch (_) {} } mode = null; pid = null; }
+    if (fromMouse(e)) { if (mode) { try { svg.releasePointerCapture(pid); } catch (_) {} } svg.style.transform = ""; mode = null; pid = null; }
     else endGesture();
   });
   svg.addEventListener("pointercancel", e => {
-    if (fromMouse(e)) { mode = null; pid = null; } else endGesture();
+    if (fromMouse(e)) { svg.style.transform = ""; mode = null; pid = null; } else endGesture();
   });
   svg.addEventListener("pointerleave", e => { if (fromMouse(e) && mode !== "pan") clearHover(); });
 
