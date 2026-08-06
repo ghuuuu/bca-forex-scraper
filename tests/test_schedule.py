@@ -1,8 +1,8 @@
 """The slot maths — the part that must not drift.
 
-Trading hours (Mon-Fri 08:00-16:00 WIB) run every 15 min; outside them, hourly.
-2026-07-27 is a Monday and 2026-07-25/26 the weekend before it, which the
-weekday cases below rely on.
+Three cadences: trading hours (Mon-Fri 08:00-16:00 WIB) every 15 min, weeknights
+hourly, weekends every three hours. 2026-07-27 is a Monday, 2026-07-25/26 the
+weekend before it, and 2026-07-24 the Friday, which the cases below rely on.
 """
 
 from __future__ import annotations
@@ -76,21 +76,37 @@ class TestNextSlotClosed(unittest.TestCase):
 
 
 class TestNextSlotWeekend(unittest.TestCase):
-    def test_saturday_is_hourly_all_day(self):
-        self.assertEqual(next_slot(at(10, 20, day=25)), at(11, 0, day=25))
-        self.assertEqual(next_slot(at(10, 0, day=25)), at(11, 0, day=25))
+    def test_saturday_is_every_three_hours(self):
+        # 09:00 is a slot; 10:20 falls between slots, next is 12:00
+        self.assertEqual(next_slot(at(9, 0, day=25)), at(12, 0, day=25))
+        self.assertEqual(next_slot(at(10, 20, day=25)), at(12, 0, day=25))
+
+    def test_off_step_weekend_hours_are_skipped(self):
+        # 10:00 and 11:00 are not weekend slots (only 00,03,…,21) — next is 12:00
+        self.assertEqual(next_slot(at(10, 0, day=25)), at(12, 0, day=25))
+        self.assertEqual(next_slot(at(11, 0, day=25)), at(12, 0, day=25))
+
+    def test_the_weekend_pattern(self):
+        t = at(23, 30, day=24)  # Fri night, into Saturday
+        got = []
+        for _ in range(5):
+            t = next_slot(t)
+            got.append(f"{t:%a %H:%M}")
+        self.assertEqual(got, ["Sat 00:00", "Sat 03:00", "Sat 06:00", "Sat 09:00", "Sat 12:00"])
 
     def test_friday_close_into_the_weekend(self):
-        # Fri 24th 15:45 -> 16:00 (hourly close), then hourly through the weekend
+        # Fri 24th 15:45 -> 16:00 (hourly close), then Fri stays hourly (weeknight)
         self.assertEqual(next_slot(at(15, 45, day=24)), at(16, 0, day=24))
+        self.assertEqual(next_slot(at(20, 0, day=24)), at(21, 0, day=24))  # Fri: hourly
+        # last Friday hour rolls into the first weekend slot, Sat 00:00
         self.assertEqual(next_slot(at(23, 0, day=24)), datetime(2026, 7, 25, 0, 0, tzinfo=WIB))
 
     def test_monday_open_after_the_weekend(self):
-        # Sunday 26th 07:00 -> Monday-ish? no: still Sunday hourly to 08:00,
-        # but Sunday is closed, so 08:00 Sunday is still hourly, next is 09:00
-        self.assertEqual(next_slot(at(7, 30, day=26)), at(8, 0, day=26))
-        self.assertEqual(next_slot(at(8, 0, day=26)), at(9, 0, day=26))  # Sunday: hourly
-        # Monday 27th resumes 15-min at 08:00
+        # Sunday 26th: three-hourly. 07:30 -> 09:00 (not 08:00 — Sunday isn't trading)
+        self.assertEqual(next_slot(at(7, 30, day=26)), at(9, 0, day=26))
+        self.assertEqual(next_slot(at(21, 0, day=26)), at(0, 0, day=27))  # Sun 21:00 -> Mon 00:00
+        # Monday 27th: weeknight hourly overnight, then 15-min from 08:00
+        self.assertEqual(next_slot(at(0, 0, day=27)), at(1, 0, day=27))
         self.assertEqual(next_slot(at(7, 0, day=27)), at(8, 0, day=27))
         self.assertEqual(next_slot(at(8, 0, day=27)), at(8, 15, day=27))
 

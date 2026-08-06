@@ -11,9 +11,9 @@ This file is the operational half: what runs where, and what to type.
 ## The short version
 
 A scraper on the NAS reads BCA's published exchange rates on a trading-hours
-schedule (every 15 min in hours, hourly otherwise) into
-a SQLite file, and rewrites a self-contained HTML chart after each read. A second
-container serves that chart. An existing Cloudflare Tunnel publishes it at
+schedule (every 15 min in hours, hourly on weeknights, every 3 h at weekends)
+into a SQLite file, and rewrites a self-contained HTML chart after each read. A
+second container serves that chart. An existing Cloudflare Tunnel publishes it at
 `https://forex.mulya.id`, which installs to a phone as an app.
 
 Update it by running one script on the NAS.
@@ -155,12 +155,15 @@ Every one takes `--db`.
 
 ## The schedule
 
-Two cadences, Indonesian time:
+Three cadences, Indonesian time:
 
 - **Trading hours (Mon–Fri 08:00–16:00 WIB):** every 15 minutes.
-- **After 16:00, nights and weekends:** once an hour. Some currencies still
-  drift when the counters are shut, so it does not go fully dark; 16:00 lands
-  as the first hourly slot, capturing the close.
+- **Weeknights (Mon–Fri, after 16:00 and before 08:00):** once an hour. The
+  live e-Rate keeps drifting with global FX overnight (~4 hours in 5 move), so
+  hourly is worth it; 16:00 lands as the first hourly slot, capturing the close.
+- **Weekends (Sat–Sun):** every 3 hours. Global FX is shut — the e-Rate barely
+  moves (~1 hour in 4) and the counter rates freeze — so hourly would mostly
+  store duplicates. Not fully dark, because a few currencies still drift.
 
 Times are computed from a **fixed UTC+7** inside the code, not from the system
 clock's timezone. Indonesia has no daylight saving, so the offset is correct
@@ -169,13 +172,14 @@ to something else. `TZ=Asia/Jakarta` in the `Dockerfile` only tidies library
 logs.
 
 To change the window or cadence, edit the constants at the top of
-`bca_forex/schedule.py` — `OPEN_MIN` / `CLOSE_MIN` and the two `*_SLOTS`
-tuples — and everything else follows:
+`bca_forex/schedule.py` — `OPEN_MIN` / `CLOSE_MIN`, the `*_SLOTS` tuples, and
+`WEEKEND_STEP_H` — and everything else follows:
 
 ```python
-OPEN_MIN, CLOSE_MIN = 8 * 60, 17 * 60
-ACTIVE_SLOTS = tuple(range(0, 60, 15))   # trading hours
-CLOSED_SLOTS = (0,)                      # nights + weekends, hourly
+OPEN_MIN, CLOSE_MIN = 8 * 60, 16 * 60
+ACTIVE_SLOTS = tuple(range(0, 60, 15))   # trading hours: every 15 min
+CLOSED_SLOTS = (0,)                      # weeknights: hourly
+WEEKEND_STEP_H = 3                       # weekends: every 3 hours
 ```
 
 ---
