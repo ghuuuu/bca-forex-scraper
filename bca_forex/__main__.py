@@ -85,7 +85,7 @@ def _refresh_chart(store: Store, args: argparse.Namespace) -> None:
 
 
 def cmd_run(args: argparse.Namespace) -> int:
-    _log(f"BCA Forex Scraper {__version__} — 15 min in trading hours, hourly otherwise WIB, db {args.db}")
+    _log(f"BCA Forex Scraper {__version__} — 15 min trading hours, hourly weeknights, 3 h weekends WIB, db {args.db}")
     if args.chart:
         _log(f"chart refreshed after each scrape -> {args.chart}")
     with Store(args.db) as store:

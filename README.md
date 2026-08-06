@@ -44,7 +44,7 @@ Cloudflare wiring, and what to type when something looks wrong.
 | Command | What it does |
 | --- | --- |
 | `once` | Scrape now and exit. Use with Task Scheduler if you prefer per-run tasks over a long-running service. |
-| `run` | Stay running and scrape on the **trading-hours schedule** (15 min in hours, hourly otherwise). |
+| `run` | Stay running and scrape on the **trading-hours schedule** (15 min in hours, hourly on weeknights, every 3 h on weekends). |
 | `latest` | Print the newest stored scrape (`--json` for machine output). |
 | `export --out rates.csv` | Dump history to CSV. `--currency USD` to narrow it. |
 | `chart --open` | Build `chart.html` from the history and open it. |
@@ -54,15 +54,20 @@ Add `--db <path>` to any of them to use a different database file.
 
 ## Schedule
 
-Two cadences, Indonesian time:
+Three cadences, Indonesian time, coarsening as the page goes quiet:
 
 - **Trading hours — Mon–Fri 08:00–16:00 WIB:** every 15 minutes (08:00, 08:15,
   08:30, 08:45…), when BCA actually moves its rates.
-- **Everything else — after 16:00, nights and weekends:** once an hour, on the
-  hour. Some currencies (CNH, say) still drift when the counters are shut, so
-  going dark would lose real movement; but 15-minute sampling of a near-static
-  page is wasted rows. 16:00 is caught as the first hourly slot, so the day's
-  close is still recorded.
+- **Weeknights — Mon–Fri after 16:00 and before 08:00:** once an hour. The live
+  e-Rate tracks global FX and keeps drifting overnight — about 4 hours in 5 still
+  show movement — so hourly earns its keep. 16:00 is caught as the first hourly
+  slot, so the day's close is still recorded.
+- **Weekends — Sat–Sun:** every 3 hours (00:00, 03:00, 06:00…). Global FX is
+  shut, so the e-Rate goes near-static (only ~1 hour in 4 changes) and the
+  counter rates freeze entirely. A few currencies still drift, so it does not go
+  fully dark — but hourly here is almost all duplicate rows. This split is
+  measured from the live history, not assumed; tune it with `WEEKEND_STEP_H` in
+  `bca_forex/schedule.py`.
 
 - **Pinned to the clock, not to start-up.** A plain "sleep" loop lands on
   whatever minute the machine booted on and moves on every restart, so the
