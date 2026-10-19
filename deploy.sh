@@ -14,6 +14,12 @@ set -eu
 
 cd "$(dirname "$0")"
 
+# DSM links docker into /usr/local/bin, which a non-interactive `ssh nas cmd`
+# session leaves off PATH (it gets /usr/bin:/bin:/usr/sbin:/sbin only). Without
+# this, a remote deploy dies at the compose check below with docker installed.
+PATH="$PATH:/usr/local/bin"
+export PATH
+
 say()  { printf '\n=== %s\n' "$1"; }
 warn() { printf '    ! %s\n' "$1"; }
 die()  { printf '\nERROR: %s\n' "$1" >&2; exit 1; }
