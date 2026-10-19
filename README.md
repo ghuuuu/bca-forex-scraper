@@ -52,6 +52,10 @@ Cloudflare wiring, and what to type when something looks wrong.
 
 Add `--db <path>` to any of them to use a different database file.
 
+`run --api <dir>` also rewrites a read-only JSON API after every scrape
+(`latest.json`, `history/<CCY>.json`) for other apps to read. Contract and
+caveats: [`SETUP.md` → The JSON API](SETUP.md#the-json-api).
+
 ## Schedule
 
 Three cadences, Indonesian time, coarsening as the page goes quiet:

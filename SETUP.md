@@ -204,6 +204,56 @@ sudo cp /volume1/docker/BCA-Forex-Scraper/data/bca-forex.sqlite3 /volume1/backup
 
 ---
 
+## The JSON API
+
+For other apps — downstream services's quotation FX rate first. Static files the scraper
+rewrites after every scrape (`run --api /web/api/v1`), served by the same
+`bca-forex-web` container, so there is nothing extra to run.
+
+| URL | Returns |
+| --- | --- |
+| `https://forex.<your-domain>/api/v1/latest.json` | newest scrape, all 18 currencies |
+| `https://forex.<your-domain>/api/v1/history/USD.json` | every stored scrape for one currency, oldest first |
+
+From a container on the NAS that shares a network with `bca-forex-web`, skip
+the tunnel: `http://bca-forex-web:8080/api/v1/latest.json`.
+
+```json
+{
+  "api_version": 1,
+  "scraped_at": "2026-10-19T08:15:00+00:00",
+  "page_updated": "19 Oktober 2026 15.14 WIB",
+  "trading_hours": true,
+  "rates": {
+    "USD": { "e_rate_buy": 18034, "e_rate_sell": 18060, "tt_buy": 17820,
+             "tt_sell": 18100, "bank_notes_buy": 17900, "bank_notes_sell": 18200 }
+  }
+}
+```
+
+History rows are arrays in the order of its `columns` field, to keep the file
+small.
+
+- **One call, every currency.** Pick `rates.USD.e_rate_sell` (or any field).
+- **`null` means BCA does not offer it**, never 0. It is the Bank Notes `0.00`
+  translated, so nothing downstream can multiply by zero.
+- **No auth.** The chart page already embeds the same numbers publicly, so this
+  exposes nothing new. If a Cloudflare Access policy is ever added to
+  `forex.<your-domain>`, server-to-server callers need a service token, or a bypass
+  rule on `/api/*`.
+- **No rate on a weekend or holiday is not a thing here.** BCA's e-Rate is live
+  every day; `latest.json` is always the newest scrape. Check `scraped_at`:
+  older than ~4 hours means the scraper is down, not that the market is shut.
+- **`trading_hours` matters for the e-Rate.** BCA quotes the e-Rate tight (a
+  20–26 IDR spread) only about **09:15–15:00 WIB** on weekdays. Outside that the
+  spread widens to 90–120 and the sell side jumps ~50 IDR. A daily job that
+  locks a rate should run after 09:15, not at 09:00.
+- **No CORS headers** — `python -m http.server` sends none, so a browser page
+  on another origin cannot fetch it. Server-side callers are fine.
+- **`api_version` changes only on a breaking change.** New fields may appear.
+
+---
+
 ## The phone app
 
 Open `https://forex.<your-domain>` and install it:

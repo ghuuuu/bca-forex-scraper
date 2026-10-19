@@ -19,6 +19,7 @@ import webbrowser
 from pathlib import Path
 
 from . import __version__
+from .api import write_api
 from .chart import build as build_chart
 from .fetcher import URL, FetchError, fetch
 from .parser import FIELDS, ParseError, parse
@@ -73,6 +74,11 @@ def _refresh_chart(store: Store, args: argparse.Namespace) -> None:
     Failing here must not take the service down: a stale chart is a nuisance,
     a stopped scraper is a hole in the history that cannot be filled in later.
     """
+    if args.api:
+        try:
+            write_api(store.conn, Path(args.api))
+        except Exception as e:  # noqa: BLE001
+            _log(f"api refresh failed (scraping continues): {e}")
     if not args.chart:
         return
     try:
@@ -88,6 +94,8 @@ def cmd_run(args: argparse.Namespace) -> int:
     _log(f"BCA Forex Scraper {__version__} — 15 min trading hours, hourly weeknights, 3 h weekends WIB, db {args.db}")
     if args.chart:
         _log(f"chart refreshed after each scrape -> {args.chart}")
+    if args.api:
+        _log(f"JSON API refreshed after each scrape -> {args.api}")
     with Store(args.db) as store:
         if not args.no_initial:
             scrape_once(store)
@@ -200,6 +208,7 @@ def build_parser() -> argparse.ArgumentParser:
     r = sub.add_parser("run", help="run forever, scraping on the trading-hours schedule")
     r.add_argument("--no-initial", action="store_true", help="wait for the first slot instead of scraping at start")
     r.add_argument("--chart", help="rebuild this HTML chart after every scrape")
+    r.add_argument("--api", help="rewrite the JSON API (latest.json, history/*.json) into this folder after every scrape")
     r.add_argument("--logo", help="image to embed in the chart header")
     r.add_argument("--pwa", action="store_true", help="also write manifest, service worker and icons")
     r.add_argument("--limit", type=int, default=20000, help="chart points per currency (default: 20000)")

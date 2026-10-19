@@ -241,6 +241,9 @@ self.addEventListener("fetch", e => {
   // entirely alone: it must reach the network, and caching a copy per timestamp
   // would grow the cache without bound.
   if (new URL(req.url).search) return;
+  // The JSON API is for other apps. Opening it in a browser counts as a
+  // navigation, which would otherwise be cached over the page shell.
+  if (new URL(req.url).pathname.includes("/api/")) return;
 
   const isPage = req.mode === "navigate" || new URL(req.url).pathname.endsWith("/");
 
