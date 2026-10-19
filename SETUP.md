@@ -226,10 +226,21 @@ the tunnel: `http://bca-forex-web:8080/api/v1/latest.json`.
   "trading_hours": true,
   "rates": {
     "USD": { "e_rate_buy": 18034, "e_rate_sell": 18060, "tt_buy": 17820,
-             "tt_sell": 18100, "bank_notes_buy": 17900, "bank_notes_sell": 18200 }
+             "tt_sell": 18100, "bank_notes_buy": 17900, "bank_notes_sell": 18200,
+             "e_rate_tight": true }
   }
 }
 ```
+
+**`e_rate_tight` is the one to check before using a rate.** `true` means this
+e-Rate is BCA's live dealing quote, safe to price or lock from; `false` means
+it is the wide off-hours quote; `null` means under ~50 readings of history in
+the last 60 days, so it cannot judge yet. It is measured from the quote itself,
+not the clock, so it is right on public holidays (wide all day) and on the odd
+tight 09:00 or 15:15 reading. Each currency learns its own line from its last
+60 days — a tight USD quote is a 0.11% spread, a tight THB one 1.15%, so no
+single number works. **KRW is the exception:** BCA barely narrows it, and its
+flag flips about a third of the time in hours. Treat KRW's as unreliable.
 
 History rows are arrays in the order of its `columns` field, to keep the file
 small.
@@ -250,8 +261,9 @@ small.
   15:00 and 15:15, so on quarter-hour scrapes those are the first and last tight
   readings. Outside it the spread is 90–120 and the sell side sits ~50 IDR
   higher. A daily job that locks a rate should run after 09:15, not at 09:00.
-  **Public holidays are not known** — on one (17 Aug, 25 Aug 2026) the flag
-  still says `true` while BCA quotes wide all day.
+  This flag is the clock only: **public holidays are not known** — on one
+  (17 Aug, 25 Aug 2026) it still says `true` while BCA quotes wide all day.
+  Price from `e_rate_tight`, above.
 - **No CORS headers** — `python -m http.server` sends none, so a browser page
   on another origin cannot fetch it. Server-side callers are fine.
 - **`api_version` changes only on a breaking change.** New fields may appear.

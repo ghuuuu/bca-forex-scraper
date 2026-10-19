@@ -25,7 +25,8 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
-from datetime import datetime, timezone
+import statistics
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from . import __version__
@@ -50,6 +51,42 @@ def in_trading_hours(scraped_at: str) -> bool:
     """Weekday, 09:15-15:00 WIB inclusive. Public holidays are not known here."""
     t = datetime.fromisoformat(scraped_at).astimezone(WIB)
     return t.weekday() < 5 and E_RATE_OPEN_MIN <= t.hour * 60 + t.minute <= E_RATE_CLOSE_MIN
+
+
+#: How much recent history calibrates each currency's tight/wide line, and the
+#: least of each kind it needs before it will call one. Recent, so a change in
+#: how BCA quotes is followed within weeks rather than averaged in forever.
+CALIBRATION_DAYS = 60
+CALIBRATION_MIN_ROWS = 50
+
+
+def _spread_pct(buy: float | None, sell: float | None) -> float | None:
+    if not buy or not sell:
+        return None
+    return (sell - buy) / ((sell + buy) / 2) * 100
+
+
+def tight_threshold(rows: list[tuple[str, float | None]]) -> float | None:
+    """Spread % at or under which this currency's e-Rate counts as tight.
+
+    `rows` is (scraped_at, spread %) over recent history. One % cannot serve
+    every currency — a tight USD quote is 0.11%, a tight THB one 1.15% — and
+    neither can e-Rate spread / TT spread. So each currency calibrates its own
+    line from history: halfway between its typical in-hours spread and the low
+    end (10th percentile) of its out-of-hours spread. The low end, not the
+    middle, because weekends quote wider than weeknights, and a line pulled up
+    by weekends lets the weeknight quote pass as tight.
+
+    Over Jul-Oct 2026 that called every weekday-hours reading tight for 17 of
+    18 currencies, both public holidays wide, and only 6 of ~1,700 off-hours
+    readings tight — each a real tight quote at 09:00 or 15:15. KRW is the
+    exception: BCA barely narrows it, so its flag flips (~63%) and means little.
+    """
+    inside = [s for t, s in rows if s is not None and in_trading_hours(t)]
+    outside = [s for t, s in rows if s is not None and not in_trading_hours(t)]
+    if len(inside) < CALIBRATION_MIN_ROWS or len(outside) < CALIBRATION_MIN_ROWS:
+        return None  # not enough history yet to say
+    return (statistics.median(inside) + statistics.quantiles(outside, n=10)[0]) / 2
 
 
 def _write_json(path: Path, obj: object) -> None:
@@ -79,25 +116,20 @@ def write_api(conn: sqlite3.Connection, directory: Path) -> int:
     ).fetchall()
     if not latest:
         return 0
-    scraped_at = latest[0]["scraped_at"]
-    _write_json(directory / "latest.json", {
-        **meta,
-        "scraped_at": scraped_at,
-        "page_updated": latest[0]["page_updated"],
-        # BCA's e-Rate is a tight quote only in trading hours; outside them the
-        # spread widens ~5x. A consumer pricing off e_rate_sell needs to know.
-        "trading_hours": in_trading_hours(scraped_at),
-        "fields": list(FIELDS),
-        "rates": {r["currency"]: _rates(r) for r in latest},
-    })
 
-    written = 1
+    written = 0
+    since = (now - timedelta(days=CALIBRATION_DAYS)).isoformat(timespec="seconds")
+    thresholds: dict[str, float | None] = {}
     for (code,) in conn.execute("SELECT DISTINCT currency FROM rates ORDER BY currency"):
         rows = conn.execute(
             f"SELECT scraped_at, {', '.join(FIELDS)} FROM rates "
             "WHERE currency = ? ORDER BY scraped_at",
             (code,),
         ).fetchall()
+        thresholds[code] = tight_threshold([
+            (r["scraped_at"], _spread_pct(r["e_rate_buy"], r["e_rate_sell"]))
+            for r in rows if r["scraped_at"] >= since
+        ])
         # Rows as arrays, not objects: the same numbers in half the bytes.
         _write_json(directory / "history" / f"{code}.json", {
             **meta,
@@ -106,4 +138,25 @@ def write_api(conn: sqlite3.Connection, directory: Path) -> int:
             "rows": [[r["scraped_at"], *(_clean(r[f]) for f in FIELDS)] for r in rows],
         })
         written += 1
-    return written
+
+    def entry(r: sqlite3.Row) -> dict[str, object]:
+        # Is this e-Rate BCA's tight dealing quote? null = not enough history
+        # to judge. This, not the clock, is what to trust before locking a rate:
+        # it reads wide on a public holiday, and tight on the odd 09:00.
+        thr = thresholds.get(r["currency"])
+        spread = _spread_pct(r["e_rate_buy"], r["e_rate_sell"])
+        tight = None if thr is None or spread is None else spread <= thr
+        return {**_rates(r), "e_rate_tight": tight}
+
+    scraped_at = latest[0]["scraped_at"]
+    _write_json(directory / "latest.json", {
+        **meta,
+        "scraped_at": scraped_at,
+        "page_updated": latest[0]["page_updated"],
+        # The clock's view: weekday 09:15-15:00 WIB. Per-currency e_rate_tight
+        # below is the measured one, and the one to price from.
+        "trading_hours": in_trading_hours(scraped_at),
+        "fields": list(FIELDS),
+        "rates": {r["currency"]: entry(r) for r in latest},
+    })
+    return written + 1

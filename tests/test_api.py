@@ -10,7 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from bca_forex.api import in_trading_hours, write_api  # noqa: E402
+from bca_forex.api import in_trading_hours, tight_threshold, write_api  # noqa: E402
 from test_chart import FIELDS, db_with  # noqa: E402
 
 # 09:30 WIB on a Monday (trading), then 20:00 WIB the same day (closed).
@@ -60,6 +60,19 @@ class TestWriteApi(unittest.TestCase):
         }
         for ts, want in cases.items():
             self.assertEqual(in_trading_hours(ts), want, ts)
+
+    def test_tight_is_null_until_there_is_history_to_judge(self):
+        self.assertIsNone(self.read("latest.json")["rates"]["USD"]["e_rate_tight"])
+
+    def test_tight_threshold_splits_dealing_from_overnight_quote(self):
+        inside = [(f"2026-10-19T03:{m:02d}:00+00:00", 0.11) for m in range(60)]  # 10:xx WIB
+        weeknight = [(f"2026-10-19T14:{m:02d}:00+00:00", 0.50) for m in range(60)]  # 21:xx WIB
+        weekend = [(f"2026-10-17T14:{m:02d}:00+00:00", 1.60) for m in range(60)]   # Sat
+        thr = tight_threshold(inside + weeknight + weekend)
+        # Must fall between the dealing quote and the WEEKNIGHT one — a line
+        # pulled up by weekends would wave the weeknight quote through.
+        self.assertTrue(0.11 < thr < 0.50, thr)
+        self.assertIsNone(tight_threshold(inside[:10] + weeknight))
 
     def test_no_temp_files_left_behind(self):
         self.assertEqual(list(self.out.rglob("*.tmp")), [])
