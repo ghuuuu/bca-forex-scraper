@@ -10,7 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from bca_forex.api import write_api  # noqa: E402
+from bca_forex.api import in_trading_hours, write_api  # noqa: E402
 from test_chart import FIELDS, db_with  # noqa: E402
 
 # 09:30 WIB on a Monday (trading), then 20:00 WIB the same day (closed).
@@ -48,6 +48,18 @@ class TestWriteApi(unittest.TestCase):
         self.assertEqual(h["columns"], ["scraped_at", *FIELDS])
         self.assertEqual([r[0] for r in h["rows"]], [T1, T2])
         self.assertEqual(h["rows"][0][2], 18050)
+
+    def test_trading_hours_is_the_tight_e_rate_window(self):
+        # UTC stamps; WIB is +7. Mon 19 Oct 2026, then Sat 17 Oct.
+        cases = {
+            "2026-10-19T02:00:20+00:00": False,  # 09:00 — still the wide quote
+            "2026-10-19T02:15:20+00:00": True,   # 09:15 — first tight reading
+            "2026-10-19T08:00:20+00:00": True,   # 15:00 — last tight reading
+            "2026-10-19T08:15:20+00:00": False,  # 15:15
+            "2026-10-17T04:00:00+00:00": False,  # Saturday 11:00
+        }
+        for ts, want in cases.items():
+            self.assertEqual(in_trading_hours(ts), want, ts)
 
     def test_no_temp_files_left_behind(self):
         self.assertEqual(list(self.out.rglob("*.tmp")), [])

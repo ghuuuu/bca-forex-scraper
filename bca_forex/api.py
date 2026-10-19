@@ -32,10 +32,24 @@ from . import __version__
 from .chart import _clean
 from .fetcher import URL
 from .parser import FIELDS
-from .schedule import is_active
+from .schedule import WIB
 
 #: Bump only for a breaking change to the shape below; add fields freely.
 API_VERSION = 1
+
+#: When BCA's e-Rate is a tight dealing quote (~20-26 IDR spread), weekdays,
+#: inclusive, in minutes since WIB midnight. BCA tightens it between 09:00 and
+#: 09:15 and widens it between 15:00 and 15:15 (spread 90-120 outside), so on
+#: our quarter-hour scrapes the first tight reading is 09:15 and the last 15:00.
+#: Measured over Jul-Oct 2026: 58-59 of 60 weekdays at each end. This is NOT the
+#: scrape schedule — that runs wider on purpose to catch the moves either side.
+E_RATE_OPEN_MIN, E_RATE_CLOSE_MIN = 9 * 60 + 15, 15 * 60
+
+
+def in_trading_hours(scraped_at: str) -> bool:
+    """Weekday, 09:15-15:00 WIB inclusive. Public holidays are not known here."""
+    t = datetime.fromisoformat(scraped_at).astimezone(WIB)
+    return t.weekday() < 5 and E_RATE_OPEN_MIN <= t.hour * 60 + t.minute <= E_RATE_CLOSE_MIN
 
 
 def _write_json(path: Path, obj: object) -> None:
@@ -72,7 +86,7 @@ def write_api(conn: sqlite3.Connection, directory: Path) -> int:
         "page_updated": latest[0]["page_updated"],
         # BCA's e-Rate is a tight quote only in trading hours; outside them the
         # spread widens ~5x. A consumer pricing off e_rate_sell needs to know.
-        "trading_hours": is_active(datetime.fromisoformat(scraped_at)),
+        "trading_hours": in_trading_hours(scraped_at),
         "fields": list(FIELDS),
         "rates": {r["currency"]: _rates(r) for r in latest},
     })

@@ -244,10 +244,14 @@ small.
 - **No rate on a weekend or holiday is not a thing here.** BCA's e-Rate is live
   every day; `latest.json` is always the newest scrape. Check `scraped_at`:
   older than ~4 hours means the scraper is down, not that the market is shut.
-- **`trading_hours` matters for the e-Rate.** BCA quotes the e-Rate tight (a
-  20–26 IDR spread) only about **09:15–15:00 WIB** on weekdays. Outside that the
-  spread widens to 90–120 and the sell side jumps ~50 IDR. A daily job that
-  locks a rate should run after 09:15, not at 09:00.
+- **`trading_hours` matters for the e-Rate.** It is `true` for a scrape taken
+  on a weekday **09:15–15:00 WIB**, inclusive — when BCA quotes the e-Rate tight
+  (a 20–26 IDR spread). BCA tightens between 09:00 and 09:15 and widens between
+  15:00 and 15:15, so on quarter-hour scrapes those are the first and last tight
+  readings. Outside it the spread is 90–120 and the sell side sits ~50 IDR
+  higher. A daily job that locks a rate should run after 09:15, not at 09:00.
+  **Public holidays are not known** — on one (17 Aug, 25 Aug 2026) the flag
+  still says `true` while BCA quotes wide all day.
 - **No CORS headers** — `python -m http.server` sends none, so a browser page
   on another origin cannot fetch it. Server-side callers are fine.
 - **`api_version` changes only on a breaking change.** New fields may appear.
