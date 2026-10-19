@@ -10,7 +10,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from bca_forex.api import in_trading_hours, tight_threshold, write_api  # noqa: E402
+from bca_forex.api import (  # noqa: E402
+    TIGHT_FIELDS, in_trading_hours, is_tight, tight_threshold, write_api,
+)
 from test_chart import FIELDS, db_with  # noqa: E402
 
 # 09:30 WIB on a Monday (trading), then 20:00 WIB the same day (closed).
@@ -45,7 +47,7 @@ class TestWriteApi(unittest.TestCase):
 
     def test_history_oldest_first_with_columns(self):
         h = self.read("history/USD.json")
-        self.assertEqual(h["columns"], ["scraped_at", *FIELDS])
+        self.assertEqual(h["columns"], ["scraped_at", *FIELDS, *TIGHT_FIELDS])
         self.assertEqual([r[0] for r in h["rows"]], [T1, T2])
         self.assertEqual(h["rows"][0][2], 18050)
 
@@ -62,7 +64,23 @@ class TestWriteApi(unittest.TestCase):
             self.assertEqual(in_trading_hours(ts), want, ts)
 
     def test_tight_is_null_until_there_is_history_to_judge(self):
-        self.assertIsNone(self.read("latest.json")["rates"]["USD"]["e_rate_tight"])
+        usd = self.read("latest.json")["rates"]["USD"]
+        for f in TIGHT_FIELDS:
+            self.assertIsNone(usd[f], f)
+
+    def test_history_rows_carry_the_tight_flags(self):
+        h = self.read("history/USD.json")
+        self.assertEqual(h["columns"][-3:], list(TIGHT_FIELDS))
+        self.assertEqual(len(h["rows"][0]), len(h["columns"]))
+
+    def test_fixed_margin_rate_is_tight_unless_abnormal(self):
+        # TT keeps one margin round the clock: no in/out split to halve.
+        inside = [(f"2026-10-19T03:{m:02d}:00+00:00", 1.57 + m % 3 * 0.01) for m in range(60)]
+        outside = [(f"2026-10-19T14:{m:02d}:00+00:00", 1.56 + m % 3 * 0.01) for m in range(60)]
+        thr = tight_threshold(inside + outside)
+        self.assertTrue(all(s <= thr for _, s in inside + outside), thr)
+        self.assertFalse(is_tight(thr, 100, 102.3))  # a 2.27% quote is abnormal
+        self.assertIsNone(is_tight(thr, 0, 102))     # not offered
 
     def test_tight_threshold_splits_dealing_from_overnight_quote(self):
         inside = [(f"2026-10-19T03:{m:02d}:00+00:00", 0.11) for m in range(60)]  # 10:xx WIB

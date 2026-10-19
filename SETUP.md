@@ -227,23 +227,42 @@ the tunnel: `http://bca-forex-web:8080/api/v1/latest.json`.
   "rates": {
     "USD": { "e_rate_buy": 18034, "e_rate_sell": 18060, "tt_buy": 17820,
              "tt_sell": 18100, "bank_notes_buy": 17900, "bank_notes_sell": 18200,
-             "e_rate_tight": true }
+             "e_rate_tight": true, "tt_tight": true, "bank_notes_tight": true }
   }
 }
 ```
 
-**`e_rate_tight` is the one to check before using a rate.** `true` means this
-e-Rate is BCA's live dealing quote, safe to price or lock from; `false` means
-it is the wide off-hours quote; `null` means under ~50 readings of history in
-the last 60 days, so it cannot judge yet. It is measured from the quote itself,
-not the clock, so it is right on public holidays (wide all day) and on the odd
-tight 09:00 or 15:15 reading. Each currency learns its own line from its last
-60 days — a tight USD quote is a 0.11% spread, a tight THB one 1.15%, so no
-single number works. **KRW is the exception:** BCA barely narrows it, and its
-flag flips about a third of the time in hours. Treat KRW's as unreliable.
+**`<rate>_tight` is the one to check before using a rate.** `true` means the
+buy/sell spread is BCA's normal tight quote, safe to price or lock from;
+`false` means it is wide; `null` means the rate is not offered, or there are
+under 50 readings of history in and out of hours, so it cannot judge yet. It is
+measured from the quote itself, not the clock, so it is right on public
+holidays (wide all day) and on the odd tight 09:00 or 15:15 reading.
+
+One line per currency and rate, from all stored history (`bca_forex/api.py`,
+`tight_threshold`): tight when the spread % is at or under
+
+    max( (m + p10) / 2,  m × 1.2 )
+
+where `m` is the median spread in trading hours and `p10` the 10th percentile
+out of hours. A tight USD e-Rate is a 0.11% spread, a tight THB one 1.15%, so
+no single number works. The same line is applied to every history row too, so
+past readings carry the flags. The line moves a little as history grows, so a
+past borderline reading can flip.
+
+- **e-Rate** is the one that matters: tight weekdays ~09:15–15:00, wide
+  otherwise. Over Jul–Oct 2026, every normal weekday-hours reading was tight
+  for 17 of 18 currencies, both public holidays were wide, and 6 of 1,724
+  off-hours readings were tight (real tight quotes at 09:00 or 15:15).
+  **KRW is the exception:** BCA barely narrows it (6.4% vs 6.8%), so it is
+  always tight. That flag means nothing for KRW.
+- **TT and Bank Notes** keep one fixed margin round the clock (USD TT 1.57% in
+  and out of hours), so they are tight unless BCA posts an abnormal spread. One
+  example: EUR and THB TT on 15–16 Oct 2026. Tight says nothing about
+  freshness: their mid moves only a few times a day.
 
 History rows are arrays in the order of its `columns` field, to keep the file
-small.
+small. Since 0.4.0 they end with the three `_tight` flags.
 
 - **One call, every currency.** Pick `rates.USD.e_rate_sell` (or any field).
 - **`null` means BCA does not offer it**, never 0. It is the Bank Notes `0.00`
