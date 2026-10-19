@@ -38,6 +38,8 @@ All 18 currencies BCA publishes, six rates each — **e-Rate**, **TT Counter** a
 **Already deployed and just need to remember how it fits together?**
 [`SETUP.md`](SETUP.md) is the operational reference: what runs where, the
 Cloudflare wiring, and what to type when something looks wrong.
+[`BLUEPRINT.md`](BLUEPRINT.md) is the design: how the parts fit, the JSON API
+contract, the tight-spread formula, and what the data shows about BCA's rates.
 
 ## Commands
 
@@ -451,7 +453,7 @@ If that happens, save the page and check the attribute names against
 python -m unittest discover -s tests -v
 ```
 
-39 tests, run against a real page saved in `tests/fixtures/`. Beyond parsing,
+57 tests, run against a real page saved in `tests/fixtures/`. Beyond parsing,
 they check the things that would be expensive to get wrong and easy to miss:
 that `17.980,00` reads as 17 980 and not 17.98 (Indonesian decimal separators
 are the reverse of English), that sell is never below buy (which would mean the
@@ -475,9 +477,13 @@ BCA Forex Scraper/
 │   ├── store.py        SQLite
 │   ├── schedule.py     every-15-minute WIB slot maths
 │   ├── chart.py        the HTML chart builder
+│   ├── api.py          the JSON API and the tight-spread flags
 │   └── assets/         BCA's logo, plus the PWA icon set
 ├── tools/make_icons.py regenerates the icons (stdlib PNG writer)
 ├── tests/              unit tests + a saved page
+├── BLUEPRINT.md        the design, end to end
+├── SETUP.md            the deployed system, operational reference
+├── deploy.sh           pull + rebuild on the NAS
 ├── data/               the database (created on first run)
 ├── run-once.bat
 ├── run-chart.bat
