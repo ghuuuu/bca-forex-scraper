@@ -1730,7 +1730,8 @@ function updateMarket() {
   m.hidden = false;
   m.className = "market " + (closed ? "closed" : "open");
   // The "opens …" half is dropped on a phone, where the header has no room.
-  m.innerHTML = closed ? `Closed<span class="long"> · opens ${nextOpenLabel(Date.now() / 1000)}</span>` : "Market open";
+  // One wrapping span, so the badge's flex gap does not open up mid-sentence.
+  m.innerHTML = closed ? `<span>Closed<span class="long"> · opens ${nextOpenLabel(Date.now() / 1000)}</span></span>` : "Market open";
 }
 
 const PREFS_KEY = "bca-forex-view";
