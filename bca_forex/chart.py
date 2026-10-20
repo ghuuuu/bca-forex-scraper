@@ -197,8 +197,10 @@ def collect(
         "ORDER BY scraped_at DESC LIMIT 1"
     ).fetchone()
     failed = conn.execute("SELECT COUNT(*) FROM runs WHERE ok = 0").fetchone()[0]
+    from .api import e_rate_open  # here, not at the top: api imports this module
 
     return {
+        "open": e_rate_open(conn),
         "generated": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "pageUpdated": page_updated[0] if page_updated else None,
         "failedRuns": failed,
@@ -2005,15 +2007,25 @@ const DAY_ABBR = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 function nextOpenLabel(nowSec) {
   const d = new Date((nowSec + 7 * 3600) * 1000);
   const day = d.getUTCDay(), mins = d.getUTCHours() * 60 + d.getUTCMinutes();
-  if (day >= 1 && day <= 5 && mins < OPEN_MIN) return "08:00 WIB";
+  if (day >= 1 && day <= 5 && mins < 9 * 60 + 15) return "09:00 WIB";
   let add = 1, wd = (day + 1) % 7;
   while (wd === 0 || wd === 6) { add++; wd = (wd + 1) % 7; }
-  return DAY_ABBR[(day + add) % 7] + " 08:00";
+  return DAY_ABBR[(day + add) % 7] + " 09:00";
+}
+
+// Open = BCA is dealing: its e-Rate is the tight quote (DATA.open, measured,
+// so a holiday reads closed). Trusted while the data is under 2 h old; else,
+// or before there is history to judge, the clock: weekdays 09:00-15:00.
+function marketOpen(nowSec) {
+  if (typeof DATA.open === "boolean" && nowSec - newestStamp(DATA) < 2 * 3600) return DATA.open;
+  const d = new Date((nowSec + 7 * 3600) * 1000);
+  const day = d.getUTCDay(), mins = d.getUTCHours() * 60 + d.getUTCMinutes();
+  return day >= 1 && day <= 5 && mins >= 9 * 60 && mins < 15 * 60;
 }
 
 function updateMarket() {
   const m = el("market");
-  const closed = isClosed(Date.now() / 1000);
+  const closed = !marketOpen(Date.now() / 1000);
   m.hidden = false;
   m.className = "market " + (closed ? "closed" : "open");
   // The "opens …" half is dropped on a phone, where the header has no room.
@@ -2071,7 +2083,7 @@ function init() {
   }
 
   updateMarket(); updateAgo();
-  setInterval(() => { updateMarket(); updateAgo(); }, 30000);   // flip at 08:00 / 16:00 without a reload
+  setInterval(() => { updateMarket(); updateAgo(); }, 30000);   // flip open / closed without a reload
 
   el("stamp").textContent = DATA.pageUpdated ? "· BCA page: " + DATA.pageUpdated : "";
   el("fails").innerHTML = DATA.failedRuns

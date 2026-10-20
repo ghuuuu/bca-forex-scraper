@@ -114,6 +114,23 @@ def is_tight(threshold: float | None, buy: float | None, sell: float | None) -> 
     return None if threshold is None or spread is None else spread <= threshold
 
 
+def e_rate_open(conn: sqlite3.Connection, code: str = "USD") -> bool | None:
+    """Is BCA dealing? True when the newest `code` e-Rate is the tight quote.
+
+    Every currency's e-Rate flips tight and wide on the same read (KRW aside,
+    which reads tight always), so USD speaks for the market. None until there
+    is history to judge.
+    """
+    rows = conn.execute(
+        "SELECT scraped_at, e_rate_buy, e_rate_sell FROM rates WHERE currency = ? "
+        "ORDER BY scraped_at", (code,),
+    ).fetchall()
+    if not rows:
+        return None
+    thr = tight_threshold([(r[0], _spread_pct(r[1], r[2])) for r in rows])
+    return is_tight(thr, rows[-1][1], rows[-1][2])
+
+
 def _write_json(path: Path, obj: object) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(path.name + ".tmp")

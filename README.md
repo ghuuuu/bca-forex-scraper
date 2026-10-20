@@ -196,8 +196,10 @@ double-clicks it.
   close together, a night or a weekend takes the width it really took. Ticks
   fall on round WIB hours, days and months. Zoomed in to three days or less,
   the closed hours (nights, weekends) are shaded grey and labelled **"Closed"**.
-- **Market badge.** The header shows ● Market open, or ● Closed with the next
-  open time, from the current WIB clock.
+- **Market badge.** The header shows ● Market open while BCA is dealing — its
+  USD e-Rate is the tight quote, so a holiday reads closed — or ● Closed with
+  the next 09:00 open. Every currency's e-Rate flips on the same read. Falls
+  back to the clock (weekdays 09:00–15:00) when the data is over 2 h old.
 - **High / low markers** on the headline line, and it **remembers** your last
   currency, range and layout between visits.
 - **Real outages still show** — a genuine data hole (the scraper down) becomes a

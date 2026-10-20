@@ -11,7 +11,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from bca_forex.api import (  # noqa: E402
-    TIGHT_FIELDS, in_trading_hours, is_tight, tight_threshold, write_api,
+    TIGHT_FIELDS, e_rate_open, in_trading_hours, is_tight, tight_threshold, write_api,
 )
 from test_chart import FIELDS, db_with  # noqa: E402
 
@@ -91,6 +91,14 @@ class TestWriteApi(unittest.TestCase):
         # pulled up by weekends would wave the weeknight quote through.
         self.assertTrue(0.11 < thr < 0.50, thr)
         self.assertIsNone(tight_threshold(inside[:10] + weeknight))
+
+    def test_market_open_is_the_newest_usd_e_rate_being_tight(self):
+        self.assertIsNone(e_rate_open(self.conn))  # too little history yet
+        inside = [(f"2026-10-19T03:{m:02d}:00+00:00", "USD", 18030, 18050, 0, 0, 0, 0) for m in range(60)]
+        outside = [(f"2026-10-19T14:{m:02d}:00+00:00", "USD", 17990, 18080, 0, 0, 0, 0) for m in range(60)]
+        self.assertFalse(e_rate_open(db_with(inside + outside)))  # newest: 21:59 wide
+        late = ("2026-10-20T02:02:00+00:00", "USD", 18015, 18035, 0, 0, 0, 0)
+        self.assertTrue(e_rate_open(db_with(inside + outside + [late])))
 
     def test_no_temp_files_left_behind(self):
         self.assertEqual(list(self.out.rglob("*.tmp")), [])

@@ -2,7 +2,7 @@
 
 The whole system on one page: what it does, how the parts fit, the rules it
 keeps, and what was learned about BCA's rates along the way. Current as of
-**0.6.3 (20 Oct 2026)**.
+**0.6.4 (20 Oct 2026)**.
 
 - [`README.md`](README.md): what the project is, commands, chart features, NAS install.
 - [`SETUP.md`](SETUP.md): the deployed system, what to type, what to do when it breaks.
@@ -421,6 +421,7 @@ yes, 15:15 no, Saturday no), the tight threshold for both the split
 | 0.3.0 | 19 Oct 2026 | JSON API (`latest.json`, `history/<CCY>.json`); `trading_hours` 09:15–15:00; remote deploy over SSH |
 | 0.4.0 | 19 Oct 2026 | `e_rate_tight`, `tt_tight`, `bank_notes_tight` from one formula, on every history row |
 | 0.5.0 | 20 Oct 2026 | Dashboard redesign: rate cards, Buy/Sell segment, Compare switch, motion and loading states; new BCA wordmark, app icons and favicon |
+| 0.6.4 | 20 Oct 2026 | Market badge open = USD e-Rate tight (all currencies flip on the same read), not the 08:00–16:00 clock |
 | 0.6.3 | 20 Oct 2026 | Every-minute reads cut to two bands, 08:45–09:15 and 14:45–15:15; every 15 min otherwise in 08:00–16:00 |
 | 0.6.2 | 20 Oct 2026 | Market hours: dashed line at each night, labelled solid line at each weekend |
 | 0.6.1 | 20 Oct 2026 | "Market hours" chart switch: trading days joined end to end, no closed gaps |
