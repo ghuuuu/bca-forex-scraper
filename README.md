@@ -185,7 +185,12 @@ double-clicks it.
   behind them. **Pinch** on a touchscreen to zoom in or out around your
   fingers (down to half an hour), and **drag** sideways to move through time.
   On a computer, drag to move and ctrl+scroll (or a trackpad pinch) to zoom.
-- **Time to scale.** The x-axis is real time: readings a minute apart sit
+- **Market hours** (on by default). Cuts nights and weekends out of the x-axis
+  and joins the trading days (Mon–Fri 08:00–16:00 WIB) end to end, so the line
+  flows without big closed gaps; readings taken while closed are left out, and
+  a faint dashed line marks where one day hands over to the next. Switch it
+  off to see every reading on real time.
+- **Time to scale.** With Market hours off, the x-axis is real time: readings a minute apart sit
   close together, a night or a weekend takes the width it really took. Ticks
   fall on round WIB hours, days and months. Zoomed in to three days or less,
   the closed hours (nights, weekends) are shaded grey and labelled **"Closed"**.

@@ -692,6 +692,9 @@ TEMPLATE = r"""<!DOCTYPE html>
     /* Buy/Sell and Compare share a row; the ranges get a full one below. */
     #side { order: 1; justify-self: start; }
     .switch { order: 2; justify-self: end; }
+    .toolbar { grid-template-columns: auto 1fr auto; }
+    #live { justify-self: end; }
+    .switch { gap: 7px; font-size: 12px; padding: 6px 2px; }
     #ranges { order: 3; grid-column: 1 / -1; display: flex; }
     #ranges button { flex: 1; padding: 10px 4px; }
 
@@ -751,6 +754,7 @@ TEMPLATE = r"""<!DOCTYPE html>
     <div class="grow"></div>
     <div class="seg" id="side" role="group" aria-label="Headline side"><span class="thumb"></span></div>
     <div class="seg" id="ranges" role="group" aria-label="Range"><span class="thumb"></span></div>
+    <button class="switch" id="live" aria-pressed="true" title="Hide nights and weekends: trading hours only, joined end to end"><span class="track"><span class="knob"></span></span>Market hours</button>
     <button class="switch" id="split" aria-pressed="false"><span class="track"><span class="knob"></span></span>Compare</button>
   </section>
 
@@ -862,6 +866,7 @@ const state = {
   hoverT: null,      // hover is shared by TIME, so both panels track together
   tipOwner: null,    // ...but only the panel under the pointer shows a tooltip
   fresh: false,      // true for the one render after a live refresh brought new data
+  live: true,        // market hours only: closed time cut out of the x-axis
   span: Infinity,    // seconds of history in view (Infinity = everything)...
   end: null,         // ...ending here, or at the newest scrape when null
 };
@@ -891,13 +896,71 @@ function activeSeries(cur) {
  */
 const MIN_SPAN = 30 * 60;   // zoomed all the way in: half an hour
 
+/* With "Market hours" on, the x-axis runs on trading time: weekdays
+ * OPEN_MIN-CLOSE_MIN WIB joined end to end, nights and weekends cut out, so
+ * Friday's close sits right beside Monday's open instead of across a 64-hour
+ * gap. Readings taken while closed are left out. Everything below works in
+ * "axis units" — seconds of real time, or seconds of trading time — and only
+ * the conversions here know which.
+ */
+const SESSION = (CLOSE_MIN - OPEN_MIN) * 60;   // trading seconds in a weekday
+const WIB_OFF = 7 * 3600;
+const dowOf = d => (d + 4) % 7;                 // day 0 (1 Jan 1970) was a Thursday
+const isWeekday = d => { const w = dowOf(d); return w > 0 && w < 6; };
+
+// Trading seconds from 1 Jan 1970 up to ts.
+function tradingTime(ts) {
+  const w = ts + WIB_OFF, d = Math.floor(w / 86400), into = w - d * 86400;
+  let days = Math.floor(d / 7) * 5;
+  for (let k = d - d % 7; k < d; k++) if (isWeekday(k)) days++;
+  const today = isWeekday(d) ? Math.min(SESSION, Math.max(0, into - OPEN_MIN * 60)) : 0;
+  return days * SESSION + today;
+}
+// The real moment at trading time u (the inverse, landing inside a session).
+function realTime(u) {
+  let n = Math.floor(u / SESSION);
+  const rem = u - n * SESSION;
+  let d = Math.floor(n / 5) * 7;
+  for (n %= 5; ; d++) if (isWeekday(d) && n-- === 0) break;
+  return d * 86400 - WIB_OFF + OPEN_MIN * 60 + rem;
+}
+const ax = ts => state.live ? tradingTime(ts) : ts;
+
+// The indices a currency shows: all of them, or only those read in trading
+// hours. Cached per data object, so a live refresh rebuilds it.
+const openCache = new WeakMap();
+function shownIdx(rec) {
+  if (!state.live) return null;
+  let v = openCache.get(rec);
+  if (!v) {
+    v = [];
+    for (let i = 0; i < rec.t.length; i++) if (!isClosed(rec.t[i])) v.push(i);
+    openCache.set(rec, v);
+  }
+  return v;
+}
+// Index list -> axis value of its k-th entry, either way round.
+function axisAt(rec, list, k) { return ax(rec.t[list ? list[k] : k]); }
+function shownCount(rec, list) { return list ? list.length : rec.t.length; }
+
 function dataBounds() {
   let lo = Infinity, hi = -Infinity;
   for (const c of shownCurrencies()) {
-    const t = (DATA.data[c] || { t: [] }).t;
-    if (t.length) { lo = Math.min(lo, t[0]); hi = Math.max(hi, t[t.length - 1]); }
+    const rec = DATA.data[c];
+    if (!rec) continue;
+    const list = shownIdx(rec), n = shownCount(rec, list);
+    if (n) { lo = Math.min(lo, axisAt(rec, list, 0)); hi = Math.max(hi, axisAt(rec, list, n - 1)); }
   }
   return isFinite(lo) ? [lo, hi] : [0, 1];
+}
+// A range button's span (real seconds) in axis units: the trading time inside
+// the last N real seconds, so "1W" is still the last week.
+function rangeSpan(k) {
+  const s = RANGES.find(r => r.k === k).s;
+  if (s === Infinity || !state.live) return s;
+  let hi = -Infinity;
+  for (const c of shownCurrencies()) { const t = (DATA.data[c] || { t: [] }).t; if (t.length) hi = Math.max(hi, t[t.length - 1]); }
+  return isFinite(hi) ? tradingTime(hi) - tradingTime(hi - s) : s;
 }
 function clampSpan(span) {
   const [lo, hi] = dataBounds(), full = Math.max(1, hi - lo);
@@ -917,11 +980,26 @@ function canPan() {
   const [lo, hi] = dataBounds();
   return clampSpan(state.span) < hi - lo;
 }
-// First index whose time is >= x, in a sorted array.
-function lowerBound(t, x) {
-  let a = 0, b = t.length;
-  while (a < b) { const m = (a + b) >> 1; if (t[m] < x) a = m + 1; else b = m; }
+// First position whose axis value is >= x.
+function lowerBound(rec, list, x) {
+  let a = 0, b = shownCount(rec, list);
+  while (a < b) { const m = (a + b) >> 1; if (axisAt(rec, list, m) < x) a = m + 1; else b = m; }
   return a;
+}
+// Market-hours axis ticks: times within sessions when zoomed in, else the
+// start of each trading day, thinned to fit. Returns real timestamps.
+function sessionTicks(u0, u1, want) {
+  const out = [], span = u1 - u0;
+  if (span <= 2 * SESSION) {
+    const step = [900, 1800, 3600, 7200, 10800].find(s => span / s <= want) || 10800;
+    for (let ts = Math.ceil((realTime(u0) + WIB_OFF) / step) * step - WIB_OFF; ts <= realTime(u1); ts += step)
+      if (!isClosed(ts)) out.push(ts);
+    return out;
+  }
+  const first = Math.ceil(u0 / SESSION), last = Math.floor(u1 / SESSION);
+  const stride = Math.max(1, Math.ceil((last - first + 1) / want));
+  for (let n = first; n <= last; n += stride) out.push(realTime(n * SESSION));
+  return out;
 }
 // The closed stretches (weekday nights, whole weekends) inside [t0, t1].
 function closedSpans(t0, t1) {
@@ -1027,13 +1105,14 @@ function makePanel(code) {
   // ("all"), so the lines run on to the edges of the plot instead of stopping
   // short at the last point inside it.
   function idxWindow() {
-    const t = (DATA.data[cur] || { t: [] }).t;
+    const rec = DATA.data[cur] || { t: [] }, list = shownIdx(rec), n = shownCount(rec, list);
+    const at = k => list ? list[k] : k;
     const [t0, t1] = viewWindow();
-    const a = lowerBound(t, t0), b = lowerBound(t, t1 + 1e-6) - 1, core = [];
-    for (let i = a; i <= b; i++) core.push(i);
+    const a = lowerBound(rec, list, t0), b = lowerBound(rec, list, t1 + 1e-6) - 1, core = [];
+    for (let k = a; k <= b; k++) core.push(at(k));
     const all = core.slice();
-    if (a > 0) all.unshift(a - 1);
-    if (b + 1 < t.length) all.push(b + 1);
+    if (a > 0) all.unshift(at(a - 1));
+    if (b + 1 < n) all.push(at(b + 1));
     return { core, all, t0, t1 };
   }
 
@@ -1087,7 +1166,7 @@ function makePanel(code) {
     // To scale: x is elapsed time, so scrapes close together sit close together
     // and a night or a weekend takes the room it really took.
     const tx = ts => M.l + (ts - win.t0) / ((win.t1 - win.t0) || 1) * iw;
-    const xOf = i => tx(t[i]);
+    const xOf = i => tx(ax(t[i]));
     const yOf = v => M.t + (1 - (v - lo) / (hi - lo)) * ih;
 
     const parts = [];
@@ -1140,7 +1219,7 @@ function makePanel(code) {
 
     // Shade the closed hours (nights, weekends) once zoomed in to a few days,
     // so the trading day reads at a glance. Further out it would be all grey.
-    if (win.t1 - win.t0 <= 3 * 86400) {
+    if (!state.live && win.t1 - win.t0 <= 3 * 86400) {
       let labelled = false;
       for (const [a, b] of closedSpans(win.t0, win.t1)) {
         const x1 = tx(a), x2 = tx(b);
@@ -1155,11 +1234,20 @@ function makePanel(code) {
     const spanSec = win.t1 - win.t0;
     // Under the crosshair's time badge, the axis label would only peek out.
     const hv0 = hoverIndex(), hx = hv0 >= 0 && idx.includes(hv0) ? xOf(hv0) : null;
-    for (const ts of timeTicks(win.t0, win.t1, Math.max(4, Math.floor(iw / 70)))) {
-      const x = tx(ts);
+    const want = Math.max(4, Math.floor(iw / 70));
+    const ticks = state.live ? sessionTicks(win.t0, win.t1, want) : timeTicks(win.t0, win.t1, want);
+    // Market hours, zoomed in: a day's first tick (its open) gets the date.
+    const opening = ts => { const p = wibParts(ts); return p.h * 60 + p.mi === OPEN_MIN; };
+    for (const ts of ticks) {
+      const x = tx(ax(ts));
+      // Market hours: a faint line where one trading day hands over to the next.
+      if (state.live && opening(ts) && x > M.l + 1)
+        parts.push(`<line x1="${x.toFixed(1)}" y1="${M.t}" x2="${x.toFixed(1)}" y2="${M.t + ih}" stroke="#94a3b8" stroke-opacity=".1" stroke-dasharray="2 4"/>`);
       if (hx != null && Math.abs(x - hx) < 80) continue;
       const p = wibParts(ts), midnight = p.h === 0 && p.mi === 0;
-      const txt = spanSec <= 2 * 86400 && !midnight ? fmtTime(ts) : fmtDay(ts);
+      const txt = state.live
+        ? (spanSec <= 2 * SESSION && !opening(ts) ? fmtTime(ts) : fmtDay(ts))
+        : (spanSec <= 2 * 86400 && !midnight ? fmtTime(ts) : fmtDay(ts));
       const anchor = x < M.l + 26 ? "start" : x > M.l + iw - 26 ? "end" : "middle";
       parts.push(`<line x1="${x.toFixed(1)}" y1="${M.t + ih}" x2="${x.toFixed(1)}" y2="${M.t + ih + 4}" stroke="#2a3345"/>`);
       parts.push(`<text x="${x.toFixed(1)}" y="${M.t + ih + 17}" text-anchor="${anchor}">${txt}</text>`);
@@ -1173,6 +1261,7 @@ function makePanel(code) {
     // (Sun 21:00 -> Mon 00:00 included) is allowed 3.5 h before it counts.
     const OUTAGE = 90 * 60, WEEKEND_OUTAGE = 210 * 60;
     const isOutage = (a, b) => {
+      if (state.live) return ax(b) - ax(a) > OUTAGE;
       const day = new Date((a + 7 * 3600) * 1000).getUTCDay();
       return b - a > (day === 0 || day === 6 ? WEEKEND_OUTAGE : OUTAGE);
     };
@@ -1726,7 +1815,7 @@ function buildRanges() {
       state.range = b.dataset.r;
       el("ranges").querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b));
       slideThumb(el("ranges"));
-      setView(RANGES.find(r => r.k === state.range).s, Infinity);
+      setView(rangeSpan(state.range), Infinity);
       state.hoverT = null; panels.forEach(p => { p.hideTip(); p.reveal(); });
       renderAll(); savePrefs();
     });
@@ -1772,6 +1861,19 @@ function syncControls() {
 function pick(preferred, avoid) {
   if (DATA.currencies.includes(preferred) && preferred !== avoid) return preferred;
   return DATA.currencies.find(c => c !== avoid) || DATA.currencies[0];
+}
+
+// Market hours on or off. The view goes back to the chosen range (ALL after a
+// pinch): a zoomed window in one axis means nothing in the other.
+function setLive(on, quiet) {
+  state.live = on;
+  el("live").classList.toggle("on", on);
+  el("live").setAttribute("aria-pressed", on);
+  if (!state.range) { state.range = "ALL"; markRanges(); }
+  setView(rangeSpan(state.range), Infinity);
+  if (quiet) return;
+  state.hoverT = null; panels.forEach(p => { p.hideTip(); p.reveal(); });
+  renderAll(); savePrefs();
 }
 
 function setSplit(on) {
@@ -1910,7 +2012,7 @@ const PREFS_KEY = "bca-forex-view";
 function savePrefs() {
   try {
     localStorage.setItem(PREFS_KEY, JSON.stringify({
-      range: state.range || loadPrefs().range, metric: state.metric, split: state.split,
+      range: state.range || loadPrefs().range, metric: state.metric, split: state.split, live: state.live,
       currencies: panels.map(p => p.currency),
     }));
   } catch (_) { /* private mode / storage full — remembering is a nicety */ }
@@ -1932,7 +2034,7 @@ function init() {
   // may have vanished since, and a stale range must not wedge the page.
   const saved = loadPrefs();
   if (saved.range && RANGES.some(r => r.k === saved.range)) state.range = saved.range;
-  state.span = RANGES.find(r => r.k === state.range).s;
+  if (typeof saved.live === "boolean") state.live = saved.live;
   if (saved.metric && DATA.series.some(s => s.key === saved.metric.key) &&
       (saved.metric.side === 0 || saved.metric.side === 1)) state.metric = saved.metric;
 
@@ -1946,6 +2048,8 @@ function init() {
   el("panels").appendChild(first.root);
 
   el("split").addEventListener("click", () => setSplit(!state.split));
+  el("live").addEventListener("click", () => setLive(!state.live));
+  setLive(state.live, true);
 
   if (saved.split) {
     setSplit(true);
