@@ -187,8 +187,9 @@ double-clicks it.
   On a computer, drag to move and ctrl+scroll (or a trackpad pinch) to zoom.
 - **Market hours** (on by default). Cuts nights and weekends out of the x-axis
   and joins the trading days (Mon–Fri 08:00–16:00 WIB) end to end, so the line
-  flows without big closed gaps; readings taken while closed are left out, and
-  a faint dashed line marks where one day hands over to the next. Switch it
+  flows without big closed gaps; readings taken while closed are left out. A
+  faint dashed line marks each cut-out night, and a stronger line labelled
+  **Weekend** each Friday-to-Monday join. Switch it
   off to see every reading on real time.
 - **Time to scale.** With Market hours off, the x-axis is real time: readings a minute apart sit
   close together, a night or a weekend takes the width it really took. Ticks

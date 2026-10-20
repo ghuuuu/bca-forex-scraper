@@ -1234,15 +1234,29 @@ function makePanel(code) {
     const spanSec = win.t1 - win.t0;
     // Under the crosshair's time badge, the axis label would only peek out.
     const hv0 = hoverIndex(), hx = hv0 >= 0 && idx.includes(hv0) ? xOf(hv0) : null;
+    // Market hours joins the days end to end, so mark every join: a faint
+    // dashed line where a night was cut out, a stronger one, labelled, where a
+    // weekend was. Overnight lines thin out once days get narrower than a few
+    // pixels; weekend lines always show.
+    if (state.live) {
+      const perDay = iw * SESSION / ((win.t1 - win.t0) || 1);
+      for (let n = Math.ceil(win.t0 / SESSION); n * SESSION <= win.t1; n++) {
+        const x = tx(n * SESSION);
+        if (x <= M.l + 1) continue;
+        const weekend = new Date((realTime(n * SESSION) + WIB_OFF) * 1000).getUTCDay() === 1;
+        if (!weekend && perDay < 8) continue;
+        parts.push(`<line x1="${x.toFixed(1)}" y1="${M.t}" x2="${x.toFixed(1)}" y2="${M.t + ih}" stroke="#94a3b8" ${
+          weekend ? `stroke-opacity=".32" stroke-width="1.2"` : `stroke-opacity=".14" stroke-dasharray="2 4"`}/>`);
+        if (weekend && perDay >= 50)
+          parts.push(`<text x="${(x + 4).toFixed(1)}" y="${(M.t + 11).toFixed(1)}" fill="#7a879e" style="font-size:9.5px;letter-spacing:.05em">Weekend</text>`);
+      }
+    }
     const want = Math.max(4, Math.floor(iw / 70));
     const ticks = state.live ? sessionTicks(win.t0, win.t1, want) : timeTicks(win.t0, win.t1, want);
     // Market hours, zoomed in: a day's first tick (its open) gets the date.
     const opening = ts => { const p = wibParts(ts); return p.h * 60 + p.mi === OPEN_MIN; };
     for (const ts of ticks) {
       const x = tx(ax(ts));
-      // Market hours: a faint line where one trading day hands over to the next.
-      if (state.live && opening(ts) && x > M.l + 1)
-        parts.push(`<line x1="${x.toFixed(1)}" y1="${M.t}" x2="${x.toFixed(1)}" y2="${M.t + ih}" stroke="#94a3b8" stroke-opacity=".1" stroke-dasharray="2 4"/>`);
       if (hx != null && Math.abs(x - hx) < 80) continue;
       const p = wibParts(ts), midnight = p.h === 0 && p.mi === 0;
       const txt = state.live

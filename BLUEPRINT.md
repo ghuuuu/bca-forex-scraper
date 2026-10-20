@@ -419,6 +419,7 @@ yes, 15:15 no, Saturday no), the tight threshold for both the split
 | 0.3.0 | 19 Oct 2026 | JSON API (`latest.json`, `history/<CCY>.json`); `trading_hours` 09:15–15:00; remote deploy over SSH |
 | 0.4.0 | 19 Oct 2026 | `e_rate_tight`, `tt_tight`, `bank_notes_tight` from one formula, on every history row |
 | 0.5.0 | 20 Oct 2026 | Dashboard redesign: rate cards, Buy/Sell segment, Compare switch, motion and loading states; new BCA wordmark, app icons and favicon |
+| 0.6.2 | 20 Oct 2026 | Market hours: dashed line at each night, labelled solid line at each weekend |
 | 0.6.1 | 20 Oct 2026 | "Market hours" chart switch: trading days joined end to end, no closed gaps |
 | 0.6.0 | 20 Oct 2026 | Every minute 08:30–15:30 on weekdays, stored only on change plus an hourly heartbeat; read stops after the rate table; `timing` report; chart x-axis to scale, pinch / ctrl+wheel zoom; `checked_at` and per-currency `scraped_at` in `latest.json` |
 
