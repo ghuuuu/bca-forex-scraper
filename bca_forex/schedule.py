@@ -2,12 +2,12 @@
 
 Three cadences, coarsening as the page goes quiet:
 
-- **Trading hours (Mon-Fri 08:30-15:30 WIB): every minute.** When BCA
-  actually moves its rates. BCA switches its e-Rate to the tight dealing quote
-  somewhere between 09:00 and 09:15 and back to the wide one between 15:00 and
-  15:15; the window runs half an hour either side so the exact minute is
-  caught, whichever it turns out to be. Most of these reads store nothing:
-  a row is only written when a rate changed (see is_heartbeat).
+- **Trading hours (Mon-Fri 08:00-16:00 WIB): every 15 minutes**, and
+  **every minute in two bands, 08:45-09:15 and 14:45-15:15.** BCA switches its
+  e-Rate to the tight dealing quote just after 09:00 and back to the wide one
+  just after 15:00; the bands pin down the exact minute. Most of these reads
+  store nothing: a row is only written when a rate changed (see
+  is_heartbeat).
 - **Weeknights (Mon-Fri, after 16:00 and before 08:00): hourly.** The live
   e-Rate tracks global FX and keeps drifting through the night — ~4 in 5 hours
   still show movement — so hourly earns its keep; 15-minute sampling of it does
@@ -34,18 +34,24 @@ from datetime import datetime, timedelta, timezone
 WIB = timezone(timedelta(hours=7), "WIB")
 
 #: Trading window, in minutes since WIB midnight, both ends included.
-#:
-#: TEMPORARY (from 20 Oct 2026): every minute across the whole window is a
-#: measurement, not the steady state. Once `python -m bca_forex timing` shows
-#: whether BCA's open and close switches land on a consistent minute, cut this
-#: back — to a few extra reads at those exact minutes if they are consistent,
-#: or to a narrow every-minute band around them if they are not.
-OPEN_MIN = 8 * 60 + 30    # 08:30
-CLOSE_MIN = 15 * 60 + 30  # 15:30
+OPEN_MIN = 8 * 60    # 08:00
+CLOSE_MIN = 16 * 60  # 16:00
 
-#: Minute-of-hour cadences: every minute when trading, on the hour when not.
-ACTIVE_SLOTS: tuple[int, ...] = tuple(range(60))
+#: Minute-of-hour cadences: quarter-hourly when trading, on the hour when not.
+ACTIVE_SLOTS: tuple[int, ...] = (0, 15, 30, 45)
 CLOSED_SLOTS: tuple[int, ...] = (0,)
+
+#: Weekday bands read every minute, (start, end) in minutes since WIB
+#: midnight, both ends included: centred on the open and close switches.
+#:
+#: TEMPORARY (from 20 Oct 2026): a measurement, not the steady state. Once
+#: `python -m bca_forex timing` shows whether the switches land on a
+#: consistent minute, narrow these bands or drop them for reads at those
+#: exact minutes.
+MINUTE_BANDS: tuple[tuple[int, int], ...] = (
+    (8 * 60 + 45, 9 * 60 + 15),    # 08:45-09:15
+    (14 * 60 + 45, 15 * 60 + 15),  # 14:45-15:15
+)
 
 #: Weekend cadence: scrape once every this many hours (at :00), rather than
 #: hourly. 3 keeps the occasional weekend drift (CNH and friends) while dropping
@@ -59,7 +65,7 @@ def now_wib() -> datetime:
 
 
 def is_active(dt: datetime) -> bool:
-    """True during trading hours: a weekday, 08:30 <= time <= 15:30 WIB."""
+    """True during trading hours: a weekday, 08:00 <= time <= 16:00 WIB."""
     ref = dt.astimezone(WIB)
     if ref.weekday() >= 5:  # Saturday, Sunday
         return False
@@ -86,9 +92,13 @@ def is_weekend(dt: datetime) -> bool:
 def _is_slot(cand: datetime) -> bool:
     """Whether `cand` (a whole minute, WIB) lands on a scheduled scrape.
 
-    The three cadences, in priority order: trading hours every 15 min, weekends
-    every WEEKEND_STEP_H hours, and everything left (weeknights) hourly.
+    The cadences, in priority order: the minute bands every minute, trading
+    hours every 15 min, weekends every WEEKEND_STEP_H hours, and everything left
+    (weeknights) hourly.
     """
+    mins = cand.hour * 60 + cand.minute
+    if cand.weekday() < 5 and any(a <= mins <= b for a, b in MINUTE_BANDS):
+        return True
     if is_active(cand):
         return cand.minute in ACTIVE_SLOTS
     if is_weekend(cand):

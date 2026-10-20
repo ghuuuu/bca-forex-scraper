@@ -114,8 +114,8 @@ def _refresh_chart(store: Store, args: argparse.Namespace) -> None:
 
 
 def cmd_run(args: argparse.Namespace) -> int:
-    _log(f"BCA Forex Scraper {__version__} — every minute 08:30-15:30 weekdays (stored on change, "
-         f"heartbeat hourly), hourly weeknights, 3 h weekends WIB, db {args.db}")
+    _log(f"BCA Forex Scraper {__version__} — every 15 min 08:00-16:00 weekdays, every minute "
+         f"08:45-09:15 and 14:45-15:15 (stored on change, heartbeat hourly), hourly weeknights, 3 h weekends WIB, db {args.db}")
     if args.chart:
         _log(f"chart refreshed after each scrape -> {args.chart}")
     if args.api:

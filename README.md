@@ -63,10 +63,11 @@ caveats: [`SETUP.md` → The JSON API](SETUP.md#the-json-api).
 
 Three cadences, Indonesian time, coarsening as the page goes quiet:
 
-- **Trading hours — Mon–Fri 08:30–15:30 WIB:** every minute. BCA switches its
-  e-Rate to the tight dealing quote somewhere between 09:00 and 09:15 and back
-  between 15:00 and 15:15; reading every minute, half an hour either side,
-  catches the exact minute. `timing` reports it.
+- **Trading hours — Mon–Fri 08:00–16:00 WIB:** every 15 minutes, and every
+  minute in two bands, **08:45–09:15** and **14:45–15:15**. BCA switches its
+  e-Rate to the tight dealing quote just after 09:00 (09:02 on 20 Oct 2026)
+  and back just after 15:00; the bands catch the exact minute. `timing`
+  reports it.
 - **Weeknights — Mon–Fri outside that:** once an hour. The live e-Rate tracks
   global FX and keeps drifting overnight — about 4 hours in 5 still show
   movement — so hourly earns its keep.

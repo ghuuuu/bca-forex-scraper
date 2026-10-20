@@ -2,7 +2,7 @@
 
 The whole system on one page: what it does, how the parts fit, the rules it
 keeps, and what was learned about BCA's rates along the way. Current as of
-**0.6.0 (20 Oct 2026)**.
+**0.6.3 (20 Oct 2026)**.
 
 - [`README.md`](README.md): what the project is, commands, chart features, NAS install.
 - [`SETUP.md`](SETUP.md): the deployed system, what to type, what to do when it breaks.
@@ -114,15 +114,17 @@ minutes and hours), not to process start, so every run lines up row for row.
 
 | When (WIB) | Cadence | Why |
 | --- | --- | --- |
-| Mon–Fri 08:30–15:30 | every minute | BCA moves rates in this window, and switches the e-Rate tight/wide at a minute we want to pin down. |
+| Mon–Fri 08:45–09:15, 14:45–15:15 | every minute | BCA switches the e-Rate tight/wide in these bands, at a minute we want to pin down. |
+| Mon–Fri 08:00–16:00 otherwise | every 15 min | BCA moves rates in this window. |
 | Mon–Fri other hours | hourly | e-Rate still drifts with global FX (~4 hours in 5 change). |
 | Sat–Sun | every 3 h | e-Rate near-static (~1 hour in 4), counter rates frozen. |
 
-Tune with `OPEN_MIN`, `CLOSE_MIN`, `ACTIVE_SLOTS`, `CLOSED_SLOTS` and
-`WEEKEND_STEP_H` in `schedule.py`.
+Tune with `OPEN_MIN`, `CLOSE_MIN`, `ACTIVE_SLOTS`, `CLOSED_SLOTS`,
+`MINUTE_BANDS` and `WEEKEND_STEP_H` in `schedule.py`.
 
-The minute window (08:30–15:30) runs half an hour either side of BCA's
-switches (09:00–09:15 and 15:00–15:15, section 8), to catch the exact minute.
+The minute bands are centred on 09:00 and 15:00, a quarter hour either side:
+BCA switches just after (the e-Rate went tight at 09:02 on 20 Oct 2026),
+so the exact minute is caught.
 `python -m bca_forex timing` lists, per weekday, the first read that saw the
 e-Rate tight and wide, and when TT / Bank Notes moved, with the median over
 days read every minute. Once that settles, the window can shrink to the
@@ -419,6 +421,7 @@ yes, 15:15 no, Saturday no), the tight threshold for both the split
 | 0.3.0 | 19 Oct 2026 | JSON API (`latest.json`, `history/<CCY>.json`); `trading_hours` 09:15–15:00; remote deploy over SSH |
 | 0.4.0 | 19 Oct 2026 | `e_rate_tight`, `tt_tight`, `bank_notes_tight` from one formula, on every history row |
 | 0.5.0 | 20 Oct 2026 | Dashboard redesign: rate cards, Buy/Sell segment, Compare switch, motion and loading states; new BCA wordmark, app icons and favicon |
+| 0.6.3 | 20 Oct 2026 | Every-minute reads cut to two bands, 08:45–09:15 and 14:45–15:15; every 15 min otherwise in 08:00–16:00 |
 | 0.6.2 | 20 Oct 2026 | Market hours: dashed line at each night, labelled solid line at each weekend |
 | 0.6.1 | 20 Oct 2026 | "Market hours" chart switch: trading days joined end to end, no closed gaps |
 | 0.6.0 | 20 Oct 2026 | Every minute 08:30–15:30 on weekdays, stored only on change plus an hourly heartbeat; read stops after the rate table; `timing` report; chart x-axis to scale, pinch / ctrl+wheel zoom; `checked_at` and per-currency `scraped_at` in `latest.json` |
@@ -428,11 +431,11 @@ yes, 15:15 no, Saturday no), the tight threshold for both the split
 ## 14. Known limits and open items
 
 - **The every-minute window is temporary** (since 20 Oct 2026). It is there to
-  measure when BCA really switches the e-Rate tight and wide. After a week or
-  two of weekdays, read `timing`: if the switches land on a consistent minute,
-  replace the window with reads at those minutes; if not, keep every-minute
-  reads only in a narrow band around 09:00–09:15 and 15:00–15:15. Change
-  `OPEN_MIN`, `CLOSE_MIN` and `ACTIVE_SLOTS` in `schedule.py`.
+  measure when BCA really switches the e-Rate tight and wide. Since 0.6.3 it
+  is two bands, 08:45–09:15 and 14:45–15:15. After a week or two of weekdays,
+  read `timing`: if the switches land on a consistent minute, replace the
+  bands with reads at those minutes; if not, narrow the bands. Change
+  `MINUTE_BANDS` in `schedule.py`.
 - **Public holidays are not known** to `trading_hours`. The tight flags cover
   this from the data.
 - **KRW e-Rate tight flag is meaningless.**

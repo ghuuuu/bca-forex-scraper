@@ -160,11 +160,12 @@ Every one takes `--db`.
 
 Three cadences, Indonesian time:
 
-- **Trading hours (Mon–Fri 08:30–15:30 WIB):** every minute, to catch the
-  exact minute BCA switches its e-Rate between the wide and tight quote
-  (somewhere in 09:00–09:15 and 15:00–15:15). `timing` reports it.
-  **Temporary:** once `timing` shows whether those minutes are consistent,
-  this gets cut back (see BLUEPRINT.md, section 14).
+- **Trading hours (Mon–Fri 08:00–16:00 WIB):** every 15 minutes, plus every
+  minute in **08:45–09:15** and **14:45–15:15**, to catch the exact minute
+  BCA switches its e-Rate between the wide and tight quote (just after 09:00
+  and 15:00). `timing` reports it. **Temporary:** once `timing` shows whether
+  those minutes are consistent, the bands get narrowed (see BLUEPRINT.md,
+  section 14).
 - **Weeknights (Mon–Fri, after 16:00 and before 08:00):** once an hour. The
   live e-Rate keeps drifting with global FX overnight (~4 hours in 5 move), so
   hourly is worth it; 16:00 lands as the first hourly slot, capturing the close.
@@ -179,12 +180,13 @@ to something else. `TZ=Asia/Jakarta` in the `Dockerfile` only tidies library
 logs.
 
 To change the window or cadence, edit the constants at the top of
-`bca_forex/schedule.py` — `OPEN_MIN` / `CLOSE_MIN`, the `*_SLOTS` tuples, and
-`WEEKEND_STEP_H` — and everything else follows:
+`bca_forex/schedule.py` — `OPEN_MIN` / `CLOSE_MIN`, the `*_SLOTS` tuples,
+`MINUTE_BANDS` and `WEEKEND_STEP_H` — and everything else follows:
 
 ```python
-OPEN_MIN, CLOSE_MIN = 8 * 60 + 30, 15 * 60 + 30
-ACTIVE_SLOTS = tuple(range(60))          # trading hours: every minute
+OPEN_MIN, CLOSE_MIN = 8 * 60, 16 * 60
+ACTIVE_SLOTS = (0, 15, 30, 45)           # trading hours: every 15 minutes
+MINUTE_BANDS = ((8 * 60 + 45, 9 * 60 + 15), (14 * 60 + 45, 15 * 60 + 15))
 CLOSED_SLOTS = (0,)                      # weeknights: hourly
 WEEKEND_STEP_H = 3                       # weekends: every 3 hours
 ```
