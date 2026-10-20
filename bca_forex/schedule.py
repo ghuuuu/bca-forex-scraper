@@ -34,6 +34,12 @@ from datetime import datetime, timedelta, timezone
 WIB = timezone(timedelta(hours=7), "WIB")
 
 #: Trading window, in minutes since WIB midnight, both ends included.
+#:
+#: TEMPORARY (from 20 Oct 2026): every minute across the whole window is a
+#: measurement, not the steady state. Once `python -m bca_forex timing` shows
+#: whether BCA's open and close switches land on a consistent minute, cut this
+#: back — to a few extra reads at those exact minutes if they are consistent,
+#: or to a narrow every-minute band around them if they are not.
 OPEN_MIN = 8 * 60 + 30    # 08:30
 CLOSE_MIN = 15 * 60 + 30  # 15:30
 

@@ -163,6 +163,8 @@ Three cadences, Indonesian time:
 - **Trading hours (Mon–Fri 08:30–15:30 WIB):** every minute, to catch the
   exact minute BCA switches its e-Rate between the wide and tight quote
   (somewhere in 09:00–09:15 and 15:00–15:15). `timing` reports it.
+  **Temporary:** once `timing` shows whether those minutes are consistent,
+  this gets cut back (see BLUEPRINT.md, section 14).
 - **Weeknights (Mon–Fri, after 16:00 and before 08:00):** once an hour. The
   live e-Rate keeps drifting with global FX overnight (~4 hours in 5 move), so
   hourly is worth it; 16:00 lands as the first hourly slot, capturing the close.

@@ -423,6 +423,12 @@ yes, 15:15 no, Saturday no), the tight threshold for both the split
 
 ## 14. Known limits and open items
 
+- **The every-minute window is temporary** (since 20 Oct 2026). It is there to
+  measure when BCA really switches the e-Rate tight and wide. After a week or
+  two of weekdays, read `timing`: if the switches land on a consistent minute,
+  replace the window with reads at those minutes; if not, keep every-minute
+  reads only in a narrow band around 09:00–09:15 and 15:00–15:15. Change
+  `OPEN_MIN`, `CLOSE_MIN` and `ACTIVE_SLOTS` in `schedule.py`.
 - **Public holidays are not known** to `trading_hours`. The tight flags cover
   this from the data.
 - **KRW e-Rate tight flag is meaningless.**
