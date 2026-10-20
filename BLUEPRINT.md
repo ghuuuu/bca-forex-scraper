@@ -78,7 +78,7 @@ All Python standard library, 3.11+. Nothing to `pip install`.
 | `bca_forex/__main__.py` | CLI: `once`, `run`, `latest`, `export`, `chart`, `status`. |
 | `Dockerfile`, `docker-compose.yml` | Image and the two containers (plus an opt-in tunnel container). |
 | `deploy.sh` | Pull, rebuild, restart, prune, report. Run on the NAS. |
-| `tools/make_icons.py` | Regenerates the PWA icon PNGs. |
+| `tools/make_icons.py` | Renders the PWA icon PNGs from `assets/BCA-Icon.svg` via headless Chrome (dev only). |
 | `tests/` | Unit tests against a saved real BCA page. |
 
 ---
@@ -395,7 +395,7 @@ yes, 15:15 no, Saturday no), the tight threshold for both the split
 | 0.2.0 | 6 Aug 2026 | Weekend cadence every 3 h |
 | 0.3.0 | 19 Oct 2026 | JSON API (`latest.json`, `history/<CCY>.json`); `trading_hours` 09:15–15:00; remote deploy over SSH |
 | 0.4.0 | 19 Oct 2026 | `e_rate_tight`, `tt_tight`, `bank_notes_tight` from one formula, on every history row |
-| 0.5.0 | 20 Oct 2026 | Dashboard redesign: rate cards, Buy/Sell segment, Compare switch, motion and loading states |
+| 0.5.0 | 20 Oct 2026 | Dashboard redesign: rate cards, Buy/Sell segment, Compare switch, motion and loading states; new BCA wordmark, app icons and favicon |
 
 ---
 

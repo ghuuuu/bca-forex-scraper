@@ -40,10 +40,14 @@ _IMAGE_MIME = {
     ".gif": "image/gif", ".webp": "image/webp",
 }
 
-#: BCA's own logo, the file their kurs page links in its header. Bundled inside
-#: the package rather than sitting beside it so it travels with the module —
-#: the Docker image copies only `bca_forex/`, and this has to be in there.
-BUNDLED_LOGO = Path(__file__).resolve().parent / "assets" / "logo-bca.svg"
+#: BCA's wordmark (the mark plus "BCA") for the header, and the mark alone for
+#: the app icon and favicon. Bundled inside the package rather than beside it
+#: so they travel with the module — the Docker image copies only `bca_forex/`.
+#: Both are drawn in one flat navy (#039); the page recolours them.
+ASSETS = Path(__file__).resolve().parent / "assets"
+BUNDLED_LOGO = ASSETS / "BCA-Logo.svg"
+BUNDLED_ICON = ASSETS / "BCA-Icon.svg"
+ART_FILL = 'fill="#039"'
 
 # Fallback if the asset is missing. A plain monogram, not a traced imitation of
 # BCA's mark: something obviously not the real logo beats a bad copy of it.
@@ -79,14 +83,17 @@ def logo_markup(path: Path | None = None) -> str:
     70 KB of path geometry, and base64 would add a third again for nothing.
     Raster formats have no such option and become data URIs.
 
-    Both are wrapped on a white plate. BCA's logo is a single blue (#0F60AD)
-    wordmark drawn for white paper; dropped straight onto this dark header it
-    reads as a smudge.
+    The bundled wordmark is recoloured to `currentColor` and sits on the dark
+    header directly, white, the way a one-colour mark is reversed out of a
+    dark background. A supplied file has colours of its own we cannot know,
+    so it goes on a white plate instead — dropped straight onto this header,
+    a mark drawn for white paper reads as a smudge.
     """
     if path is None:
         if not BUNDLED_LOGO.exists():
             return FALLBACK_LOGO
-        path = BUNDLED_LOGO
+        art = _inline_svg(BUNDLED_LOGO.read_text(encoding="utf-8"))
+        return f'<span class="mark">{art.replace(ART_FILL, "fill=\"currentColor\"")}</span>'
 
     suffix = path.suffix.lower()
     if suffix == ".svg":
@@ -100,6 +107,42 @@ def logo_markup(path: Path | None = None) -> str:
             + ", ".join(sorted(_IMAGE_MIME))
         )
     return f'<span class="plate">{inner}</span>'
+
+
+def app_icon_svg(corner: float = 0.22, content: float = 0.64) -> str:
+    """The app icon: BCA's mark in white on a square of the bank's blue.
+
+    One source for every icon — the page's favicon uses it directly, and
+    tools/make_icons.py renders it to the PWA PNGs. `corner` is the rounding
+    as a fraction of the side (0 for icons the OS masks itself), `content` how
+    much of the side the mark spans (smaller for a maskable icon, which may be
+    cropped to a circle).
+    """
+    raw = BUNDLED_ICON.read_text(encoding="utf-8")
+    x0, y0, w, h = (float(v) for v in re.search(r'viewBox="([^"]+)"', raw).group(1).split())
+    paths = "".join(re.findall(r"<path\b[^>]*/>", raw)).replace(ART_FILL, 'fill="#fff"')
+    k = content * 100 / max(w, h)
+    tx, ty = (100 - w * k) / 2 - x0 * k, (100 - h * k) / 2 - y0 * k
+    return (
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">'
+        '<defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">'
+        '<stop offset="0" stop-color="#0a74c9"/><stop offset="1" stop-color="#003f8f"/>'
+        "</linearGradient></defs>"
+        f'<rect width="100" height="100" rx="{corner * 100:g}" fill="url(#bg)"/>'
+        f'<g transform="translate({tx:.3f} {ty:.3f}) scale({k:.5f})">{paths}</g></svg>'
+    )
+
+
+def favicon_link() -> str:
+    """The icon as a data URI, so even the plain one-file chart has a tab icon.
+
+    Base64 rather than URL-encoded: the SVG's xmlns would otherwise put an
+    http:// URL in the page head, and nothing in there is meant to be fetched.
+    """
+    if not BUNDLED_ICON.exists():
+        return ""
+    data = base64.b64encode(app_icon_svg().encode("utf-8")).decode("ascii")
+    return f'<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,{data}">'
 
 
 def _epoch(iso: str) -> int:
@@ -213,8 +256,12 @@ MANIFEST = {
 # Redirected or non-OK responses are never cached. Behind Cloudflare Access an
 # expired session answers with a login page, and caching that would pin the app
 # to a login screen it can no longer get past.
+#
+# The icons are cached cache-first, so new artwork under the same file names
+# never reaches an installed app. Bump CACHE whenever the icons change: the
+# activate step deletes every cache not named here.
 SERVICE_WORKER = """\
-const CACHE = "bca-forex-v1";
+const CACHE = "bca-forex-v2";
 const SHELL = ["./", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png",
                "./icon-512-maskable.png", "./apple-touch-icon.png"];
 
@@ -316,6 +363,7 @@ def build(
         .replace("/*__DATA__*/null", json.dumps(payload, separators=(",", ":")))
         .replace("<!--__LOGO__-->", logo_markup(logo))
         .replace("<!--__PWA__-->", PWA_HEAD if pwa else "")
+        .replace("<!--__ICON__-->", favicon_link())
         .replace("<!--__VERSION__-->", __version__)
     )
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -332,6 +380,7 @@ TEMPLATE = r"""<!DOCTYPE html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>BCA Forex — rate history</title>
+<!--__ICON__-->
 <!--__PWA__-->
 <style>
   :root {
@@ -393,6 +442,8 @@ TEMPLATE = r"""<!DOCTYPE html>
   }
   header.brand .logo svg, header.brand .logo img { display: block; height: 34px; width: auto; max-width: 118px; }
   header.brand .logo > svg { height: 42px; border-radius: 11px; }
+  header.brand .logo .mark { display: flex; color: #fff; filter: drop-shadow(0 4px 14px rgba(56,189,248,.35)); }
+  header.brand .logo .mark svg { height: 36px; }
   header.brand .who { flex: 1; min-width: 0; }
   header.brand .t { font-size: 17px; font-weight: 700; letter-spacing: -.3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   header.brand .t .ver {
@@ -629,6 +680,7 @@ TEMPLATE = r"""<!DOCTYPE html>
     header.brand .logo .plate { padding: 5px 8px; border-radius: 9px; }
     header.brand .logo svg, header.brand .logo img { height: 26px; max-width: 92px; }
     header.brand .logo > svg { height: 34px; }
+    header.brand .logo .mark svg { height: 28px; }
     header.brand .t { font-size: 15px; }
     header.brand .s { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     header.brand .t .ver, a.src, .sync, .market .long { display: none; }

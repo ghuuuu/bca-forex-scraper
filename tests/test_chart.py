@@ -13,7 +13,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from bca_forex.chart import (  # noqa: E402
-    BUNDLED_LOGO, PWA_ICONS, build, collect, logo_markup, write_pwa,
+    BUNDLED_ICON, BUNDLED_LOGO, PWA_ICONS, app_icon_svg, build, collect, logo_markup,
+    write_pwa,
 )
 from bca_forex.store import Store  # noqa: E402
 
@@ -119,7 +120,27 @@ class TestLogo(unittest.TestCase):
     def test_no_argument_uses_the_bundled_logo(self):
         markup = logo_markup()
         self.assertIn("<svg", markup)
-        self.assertIn('class="plate"', markup)
+        # reversed out white on the dark header: recoloured, no plate
+        self.assertIn('fill="currentColor"', markup)
+        self.assertNotIn('fill="#039"', markup)
+        self.assertNotIn('class="plate"', markup)
+
+    def test_a_supplied_logo_keeps_its_white_plate(self):
+        p = Path(tempfile.mkdtemp()) / "logo.svg"
+        p.write_text("<svg><path d='M0 0'/></svg>", encoding="utf-8")
+        self.assertIn('class="plate"', logo_markup(p))
+
+    def test_the_app_icon_is_the_white_mark_on_blue(self):
+        svg = app_icon_svg()
+        self.assertIn('fill="#fff"', svg)
+        self.assertNotIn('fill="#039"', svg)
+        self.assertEqual(svg.count("<path"), BUNDLED_ICON.read_text(encoding="utf-8").count("<path"))
+
+    def test_the_page_carries_its_favicon_inline(self):
+        conn = db_with([(T1, "USD", 1.0, 1.0, 1.0, 1.0, 1.0, 1.0)])
+        html = build(conn, Path(tempfile.mkdtemp()) / "c.html")[0].read_text(encoding="utf-8")
+        self.assertIn('rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,', html)
+        self.assertNotIn("__ICON__", html)
 
     def test_svg_is_inlined_rather_than_base64(self):
         # base64 would cost a third again on a 70 KB asset for no benefit

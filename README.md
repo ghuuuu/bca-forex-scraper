@@ -190,15 +190,22 @@ Options: `--currency USD` for one code, `--limit N` to cap points per currency,
 `--out <path>` to write elsewhere, `--logo <file>` to use a different image in
 the header (svg/png/jpg/gif/webp).
 
-The header carries BCA's own logo, `bca_forex/assets/logo-bca.svg` — the same
-file their kurs page links. It lives inside the package because the Docker image
-copies only `bca_forex/`, and it is **embedded, not linked**, so the chart still
-shows it after being copied to a phone or a USB stick.
+The header carries BCA's wordmark, `bca_forex/assets/BCA-Logo.svg`, and the
+tab and app icons are built from the mark alone, `bca_forex/assets/BCA-Icon.svg`.
+Both live inside the package because the Docker image copies only `bca_forex/`,
+and both are **embedded, not linked**, so the chart still shows them after
+being copied to a phone or a USB stick.
 
-SVG is inlined as markup rather than base64'd: the asset is 70 KB of path
-geometry and base64 would add a third again for nothing. It sits on a white
-plate because the mark is a single flat blue drawn for white paper — recolouring
-it would make it the wrong logo. That asset is most of `chart.html`'s ~100 KB.
+The artwork is one flat navy (`#039`). The page recolours it: the wordmark is
+reversed out white on the dark header, and the icon is the white mark on a
+square of BCA blue. A logo passed with `--logo` keeps its own colours and sits
+on a white plate instead.
+
+The PWA icon PNGs are rendered from that same icon SVG by
+`python tools/make_icons.py`, which borrows headless Chrome or Edge for the
+rasterising (development only; the PNGs are committed). After regenerating
+them, bump `CACHE` in the service worker in `chart.py`, or installed apps keep
+the old icons.
 
 `run --chart <path>` keeps a chart rebuilt after every scrape, which is how the
 NAS setup below serves a page that is never more than 15 minutes stale.
@@ -489,7 +496,7 @@ BCA Forex Scraper/
 │   ├── chart.py        the HTML chart builder
 │   ├── api.py          the JSON API and the tight-spread flags
 │   └── assets/         BCA's logo, plus the PWA icon set
-├── tools/make_icons.py regenerates the icons (stdlib PNG writer)
+├── tools/make_icons.py regenerates the icon PNGs (needs Chrome or Edge)
 ├── tests/              unit tests + a saved page
 ├── BLUEPRINT.md        the design, end to end
 ├── SETUP.md            the deployed system, operational reference
