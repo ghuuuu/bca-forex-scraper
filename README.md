@@ -141,26 +141,36 @@ in plain JavaScript and the history is embedded in the page, so it opens from a
 USB stick or an email attachment with no network at all. `run-chart.bat`
 double-clicks it.
 
-- **Three controls, one per rate type.** e-Rate, TT Counter and Bank Notes. Each
+- **Three toggles, one per rate type.** e-Rate, TT Counter and Bank Notes. Each
   one shows *both* sides: buy solid, sell dashed, and the band shaded between
   them — that band is the spread, which is the thing worth looking at.
-- **Headline picker.** The big number defaults to **e-Rate sell** — what you pay
-  to buy foreign currency — and the dropdown swaps it to any of the six
-  series/side combinations. High, low and change follow whichever side you pick.
-- **Two charts.** A second panel for another currency, defaulting to USD and
-  CNH. Side by side once the window is wide enough for a half-width panel to
-  hold the whole stats table, stacked below that — two cramped charts read
-  worse than two full-width ones. Metric, series and range stay shared across
-  both panels, so the two are read the same way, and the crosshair is synced by
-  timestamp: hovering one marks the same moment on the other.
+- **Headline.** The big number defaults to **e-Rate sell** — what you pay to buy
+  foreign currency. Tap a **rate card** below the chart to headline that
+  series, and the **Buy / Sell** switch to change side. The headline series is
+  drawn on top at full strength, the others stepped back, and the panel takes
+  on its colour.
+- **Rate cards.** One per series: latest value, change over the range, a
+  sparkline, then buy, sell, spread, spread %, high and low. A swipeable row on
+  a phone.
+- **Compare.** A second panel for another currency, defaulting to USD and CNH.
+  Side by side on a wide screen, stacked below that. Headline, series and range
+  stay shared across both panels, so the two are read the same way, and the
+  crosshair is synced by timestamp: hovering one marks the same moment on the
+  other.
+- **Motion where it means something.** Lines wipe in on a change of currency or
+  range, numbers count to their new value, a live dot pulses on the newest
+  reading, and a price flashes green or red when a refresh brings a new one.
+  All of it is off for anyone whose system asks for reduced motion.
 - **It keeps itself current.** The page refetches its own payload shortly after
   each scrape slot and re-renders in place, so a screen left open does not go
-  stale. Selections survive — it swaps the data, it does not reload.
+  stale. Selections survive — it swaps the data, it does not reload. The header
+  says how old the newest scrape is, with a spinner while a refresh runs.
 - **Every currency in one file.** Switch with the dropdown; no rebuild needed.
   Scales differ by a factor of 2000 (KRW ≈ 12 IDR, CHF ≈ 22 000), so they get
   one chart each rather than one unreadable chart together.
 - **Hover for detail**, or **press and hold** on a touchscreen — a quick tap
-  still scrolls the page, so the chart does not hijack the phone.
+  still scrolls the page, so the chart does not hijack the phone. The crosshair
+  pins the headline value on the price axis and the time on the date axis.
 - **Ranges** 1D / 1W / 1M / 3M / 1Y / ALL, greyed out until there is history
   behind them.
 - **Session x-axis.** Points are spaced evenly, not by wall-clock time, so the
@@ -173,7 +183,7 @@ double-clicks it.
 - **High / low markers** on the headline line, and it **remembers** your last
   currency, range and layout between visits.
 - **Real outages still show** — a genuine data hole (the scraper down) becomes a
-  grey dotted bridge, distinct from the normal overnight cadence.
+  grey dotted bridge, distinct from the normal overnight and weekend cadence.
 - **Bank Notes disables itself** for currencies BCA quotes as `0.00`.
 
 Options: `--currency USD` for one code, `--limit N` to cap points per currency,

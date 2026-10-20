@@ -335,135 +335,204 @@ TEMPLATE = r"""<!DOCTYPE html>
 <!--__PWA__-->
 <style>
   :root {
-    --bg: #0b0e14; --panel: #121722; --panel-2: #171d2a; --line: #232b3b;
-    --text: #e6edf7; --muted: #8b97ab;
-    --up: #22c55e; --down: #ef4444;
+    --bg: #06080d; --panel: #0d121b; --panel-2: #141a26; --raise: #1c2433;
+    --line: rgba(148,163,184,.11); --line-2: rgba(148,163,184,.21);
+    --text: #e8eef8; --muted: #8592a8; --dim: #5d687c;
+    --up: #34d399; --down: #f87171; --warn: #fbbf24;
     --c-e_rate: #38bdf8; --c-tt: #fbbf24; --c-bank_notes: #c084fc;
+    --ease: cubic-bezier(.22,1,.36,1); --spring: cubic-bezier(.34,1.56,.64,1);
+    --pad: 16px;
+    color-scheme: dark;
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-  html, body { margin: 0; height: 100%; }
+  html, body { margin: 0; min-height: 100%; }
   body {
     background: var(--bg); color: var(--text);
-    font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     font-variant-numeric: tabular-nums; -webkit-font-smoothing: antialiased;
   }
-  .wrap { max-width: 1420px; margin: 0 auto; padding: 14px; display: flex; flex-direction: column; gap: 12px; }
-
-  header.brand {
-    display: flex; align-items: center; gap: 13px;
-    padding-bottom: 12px; border-bottom: 1px solid var(--line);
+  /* Soft colour washes behind everything. A fixed pseudo-element rather than
+     background-attachment: fixed, which stutters on iOS. */
+  body::before {
+    content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+    background:
+      radial-gradient(900px 520px at 8% -12%, rgba(56,189,248,.13), transparent 62%),
+      radial-gradient(780px 480px at 104% -6%, rgba(192,132,252,.10), transparent 60%),
+      radial-gradient(700px 420px at 50% 112%, rgba(251,191,36,.05), transparent 60%);
   }
+  .wrap { max-width: 1420px; margin: 0 auto; padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+  button, select { font-family: inherit; }
+  :focus-visible { outline: 2px solid var(--c-e_rate); outline-offset: 2px; }
+
+  /* Everything arrives once, staggered, instead of popping in as one slab. */
+  .rise { animation: rise .7s var(--ease) both; animation-delay: calc(var(--i, 0) * 70ms); }
+  @keyframes rise { from { opacity: 0; transform: translateY(12px); } }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes pulse {
+    0% { box-shadow: 0 0 0 0 rgba(52,211,153,.55); }
+    70%, 100% { box-shadow: 0 0 0 7px rgba(52,211,153,0); }
+  }
+
+  .card {
+    position: relative;
+    background: linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.012) 38%), var(--panel);
+    border: 1px solid var(--line); border-radius: 18px;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.05), 0 24px 60px -30px rgba(0,0,0,.8);
+  }
+
+  /* ---- header ---- */
+  header.brand { display: flex; align-items: center; gap: 14px; padding: 2px 2px 0; }
   header.brand .logo { flex: none; display: flex; align-items: center; }
   /* The bank's mark is one flat blue for white paper, so it gets a white plate
      to sit on rather than being recoloured — a repainted logo is the wrong
      logo. The fallback monogram carries its own background and skips this. */
   header.brand .logo .plate {
     display: flex; align-items: center; background: #fff;
-    padding: 7px 11px; border-radius: 9px;
+    padding: 7px 11px; border-radius: 11px;
+    box-shadow: 0 8px 24px -10px rgba(56,189,248,.55);
   }
-  header.brand .logo svg, header.brand .logo img {
-    display: block; height: 34px; width: auto; max-width: 118px;
-  }
-  header.brand .logo > svg { height: 42px; border-radius: 9px; }
+  header.brand .logo svg, header.brand .logo img { display: block; height: 34px; width: auto; max-width: 118px; }
+  header.brand .logo > svg { height: 42px; border-radius: 11px; }
   header.brand .who { flex: 1; min-width: 0; }
-  header.brand .t {
-    font-size: 16px; font-weight: 700; letter-spacing: -.2px;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  }
+  header.brand .t { font-size: 17px; font-weight: 700; letter-spacing: -.3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   header.brand .t .ver {
     font-size: 10.5px; font-weight: 600; color: var(--muted); letter-spacing: .02em;
-    border: 1px solid var(--line); border-radius: 999px; padding: 2px 7px;
-    margin-left: 7px; vertical-align: middle;
+    border: 1px solid var(--line-2); border-radius: 999px; padding: 2px 7px; margin-left: 7px; vertical-align: middle;
   }
   header.brand .s { color: var(--muted); font-size: 11.5px; }
-  header.brand a.src {
-    flex: none; color: var(--muted); font-size: 11.5px; text-decoration: none;
-    border: 1px solid var(--line); border-radius: 999px; padding: 6px 12px; white-space: nowrap;
-  }
-  header.brand a.src:hover { color: var(--text); border-color: #38455e; }
-  header.brand .market {
-    flex: none; display: inline-flex; align-items: center; gap: 7px;
+  .status { flex: none; display: flex; align-items: center; gap: 10px; }
+  .market {
+    display: inline-flex; align-items: center; gap: 8px; white-space: nowrap;
     font-size: 11.5px; font-weight: 600; color: var(--muted);
-    border: 1px solid var(--line); border-radius: 999px; padding: 6px 12px; white-space: nowrap;
+    background: rgba(255,255,255,.03); border: 1px solid var(--line); border-radius: 999px; padding: 6px 12px;
   }
-  header.brand .market::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
-  header.brand .market.open { color: var(--up); }
-  header.brand .market.closed { color: var(--muted); }
-  @media (max-width: 620px) { header.brand .market { display: none; } }
-
-  select, button { font-family: inherit; }
-  select.sel {
-    background: var(--panel-2); color: var(--text); border: 1px solid var(--line);
-    border-radius: 8px; padding: 8px 11px; font: 600 13px/1 inherit; cursor: pointer;
+  .market::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+  .market.open { color: var(--up); border-color: rgba(52,211,153,.3); background: rgba(52,211,153,.07); }
+  .market.open::before { animation: pulse 2s infinite; }
+  /* Loading state for the self-refresh: a ring that spins only while a fetch
+     is in flight, beside how old the newest scrape is. */
+  .sync { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); font-size: 11.5px; white-space: nowrap; }
+  .sync .ring { width: 11px; height: 11px; border-radius: 50%; border: 1.6px solid var(--line-2); border-top-color: var(--c-e_rate); opacity: .0; transition: opacity .2s; }
+  .sync.busy .ring { opacity: 1; animation: spin .7s linear infinite; }
+  a.src {
+    flex: none; color: var(--muted); font-size: 11.5px; text-decoration: none; white-space: nowrap;
+    border: 1px solid var(--line); border-radius: 999px; padding: 6px 12px; transition: color .2s, border-color .2s;
   }
-  select.sel:focus { outline: 2px solid #2f6fed; outline-offset: 1px; }
-  select.cur { font-size: 15px; letter-spacing: .04em; padding: 9px 12px; min-width: 104px; }
+  a.src:hover { color: var(--text); border-color: var(--line-2); }
 
-  /* Global controls: everything here applies to every panel at once, which is
-     the whole point of the second panel — two currencies only line up if
-     they are on the same metric, the same series and the same range. */
-  .globals { display: flex; flex-wrap: wrap; align-items: center; gap: 9px 14px; }
-  .field { display: flex; align-items: center; gap: 8px; }
-  .field > span { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; font-weight: 600; }
-  button.pill {
-    background: var(--panel); border: 1px solid var(--line); color: var(--muted);
-    border-radius: 999px; padding: 8px 15px; font: 600 12.5px/1 inherit; cursor: pointer;
-  }
-  button.pill:hover { border-color: #38455e; color: var(--text); }
-  button.pill.on { background: var(--panel-2); border-color: #38455e; color: var(--text); }
-  button.pill .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #3d4a63; margin-right: 7px; vertical-align: middle; }
-  button.pill.on .dot { background: var(--up); }
-
-  .controls { display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between; align-items: center; }
-  .toggles { display: flex; flex-wrap: wrap; gap: 8px; }
+  /* ---- toolbar: applies to every panel at once, which is the whole point of
+     the second panel — two currencies only line up if they are on the same
+     side, the same series and the same range. ---- */
+  .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 8px; border-radius: 16px; }
+  .toolbar .grow { flex: 1; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
   .tg {
-    display: inline-flex; align-items: center; gap: 8px; cursor: pointer; user-select: none;
-    background: var(--panel); border: 1px solid var(--line); border-radius: 999px;
-    padding: 7px 14px 7px 11px; font-weight: 600; color: var(--muted); transition: .12s;
+    position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    cursor: pointer; user-select: none; white-space: nowrap;
+    padding: 8px 14px 8px 10px; border-radius: 999px; font-weight: 600; color: var(--muted);
+    background: rgba(255,255,255,.02); border: 1px solid var(--line);
+    transition: color .2s, background .25s, border-color .25s, transform .2s var(--spring);
   }
-  .tg:hover { border-color: #33405a; }
+  .tg:hover { border-color: var(--line-2); color: var(--text); }
+  .tg:active { transform: scale(.95); }
   .tg input { position: absolute; opacity: 0; pointer-events: none; }
-  .tg .sw { width: 22px; height: 3px; border-radius: 2px; background: currentColor; opacity: .3; }
-  .tg.on { color: var(--text); background: var(--panel-2); border-color: #38455e; }
-  .tg.on .sw { opacity: 1; }
-  .tg.off-data { opacity: .38; cursor: not-allowed; }
-  .tg[data-k="e_rate"] .sw { color: var(--c-e_rate); }
-  .tg[data-k="tt"] .sw { color: var(--c-tt); }
-  .tg[data-k="bank_notes"] .sw { color: var(--c-bank_notes); }
-
-  .ranges { display: flex; gap: 4px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 3px; }
-  .ranges button {
-    background: none; border: 0; color: var(--muted); font: 600 12px/1 inherit;
-    padding: 7px 11px; border-radius: 6px; cursor: pointer;
+  .tg .sw { position: relative; width: 15px; height: 15px; border-radius: 50%; border: 2px solid var(--c); transition: background .25s var(--ease), box-shadow .25s; }
+  .tg .sw::after {
+    content: ""; position: absolute; left: 3.6px; top: .6px; width: 3.4px; height: 7px;
+    border: solid #06080d; border-width: 0 2px 2px 0;
+    transform: rotate(45deg) scale(0); transition: transform .3s var(--spring);
   }
-  .ranges button:hover:not(:disabled) { color: var(--text); }
-  .ranges button.on { background: #2b3547; color: #fff; }
-  .ranges button:disabled { opacity: .3; cursor: not-allowed; }
+  .tg.on { color: var(--text); background: color-mix(in srgb, var(--c) 11%, transparent); border-color: color-mix(in srgb, var(--c) 38%, transparent); }
+  .tg.on .sw { background: var(--c); box-shadow: 0 0 12px color-mix(in srgb, var(--c) 65%, transparent); }
+  .tg.on .sw::after { transform: rotate(45deg) scale(1); }
+  .tg.off-data { opacity: .35; cursor: not-allowed; }
+  .tg:has(input:focus-visible) { outline: 2px solid var(--c-e_rate); outline-offset: 2px; }
 
-  /* One column by default. Two only when there is genuinely room for two —
-     side-by-side charts narrower than this are worse than stacked ones. */
+  /* Segmented control with a thumb that slides to the chosen button. */
+  .seg { position: relative; display: inline-flex; padding: 3px; border-radius: 12px; background: rgba(0,0,0,.3); border: 1px solid var(--line); }
+  .seg .thumb {
+    position: absolute; top: 3px; bottom: 3px; left: 0; width: 0; border-radius: 9px; opacity: 0;
+    background: var(--raise); border: 1px solid var(--line-2);
+    box-shadow: 0 3px 10px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.07);
+  }
+  .seg.ready .thumb { transition: transform .4s var(--spring), width .4s var(--spring), opacity .2s; }
+  .seg button {
+    position: relative; z-index: 1; background: none; border: 0; color: var(--muted);
+    font-size: 12px; font-weight: 650; line-height: 1; padding: 9px 12px; border-radius: 9px; cursor: pointer;
+    transition: color .2s, transform .2s var(--spring);
+  }
+  .seg button:hover:not(:disabled) { color: var(--text); }
+  .seg button:active:not(:disabled) { transform: scale(.94); }
+  .seg button.on { color: #fff; }
+  .seg button:disabled { opacity: .3; cursor: not-allowed; }
+
+  /* Compare: a switch whose knob stretches while pressed. */
+  .switch {
+    display: inline-flex; align-items: center; gap: 9px; background: none; border: 0; cursor: pointer;
+    color: var(--muted); font-size: 12.5px; font-weight: 650; padding: 6px 6px; white-space: nowrap; transition: color .2s;
+  }
+  .switch .track { position: relative; width: 36px; height: 21px; border-radius: 999px; background: var(--raise); border: 1px solid var(--line-2); transition: background .3s, border-color .3s; }
+  .switch .knob {
+    position: absolute; top: 2px; left: 2px; width: 15px; height: 15px; border-radius: 999px; background: #aab6c8;
+    box-shadow: 0 2px 5px rgba(0,0,0,.4); transition: transform .4s var(--spring), width .2s var(--ease), background .3s;
+  }
+  .switch:active .knob { width: 20px; }
+  .switch:hover { color: var(--text); }
+  .switch.on { color: var(--text); }
+  .switch.on .track { background: color-mix(in srgb, var(--c-e_rate) 60%, #0b1220); border-color: transparent; }
+  .switch.on .knob { transform: translateX(15px); background: #fff; }
+  .switch.on:active .knob { transform: translateX(10px); }
+
+  /* ---- panels ---- */
   .panels { display: grid; grid-template-columns: 1fr; gap: 14px; }
-  /* Side by side only once a half-width panel can hold the whole stats table.
-     Below this the columns overflowed and put a scrollbar under every chart —
-     and two cramped charts read worse than two full-width stacked ones, so the
-     threshold is set by what actually fits rather than by a round number. */
+  /* Side by side only once a half-width panel can hold three rate cards.
+     Two cramped charts read worse than two full-width stacked ones. */
   @media (min-width: 1200px) { .panels.split { grid-template-columns: 1fr 1fr; } }
 
-  .panel { display: flex; flex-direction: column; gap: 11px; min-width: 0; }
-  .panel .top { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; }
-  .quote { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
-  .price { font-size: 29px; font-weight: 650; letter-spacing: -.5px; line-height: 1; }
-  .chg { font-size: 13.5px; font-weight: 600; }
+  .panel { display: flex; flex-direction: column; gap: 14px; min-width: 0; padding: var(--pad); overflow: hidden; }
+  /* A glow in the headline series' colour, so the panel says at a glance
+     which rate the big number is. */
+  .panel::before {
+    content: ""; position: absolute; inset: 0; pointer-events: none; border-radius: inherit;
+    background: radial-gradient(520px 240px at 0% 0%, color-mix(in srgb, var(--glow, #38bdf8) 16%, transparent), transparent 70%);
+    transition: background .5s;
+  }
+  .panel > * { position: relative; }
+  .hero { display: flex; align-items: center; flex-wrap: wrap; gap: 12px 18px; }
+  .curpick { position: relative; flex: none; }
+  .curpick::after {
+    content: ""; position: absolute; right: 15px; top: 50%; width: 7px; height: 7px; pointer-events: none;
+    border: solid var(--muted); border-width: 0 2px 2px 0; transform: translateY(-70%) rotate(45deg);
+  }
+  select.cur {
+    appearance: none; -webkit-appearance: none; cursor: pointer;
+    background: var(--panel-2); color: var(--text); border: 1px solid var(--line-2); border-radius: 13px;
+    font-size: 19px; font-weight: 750; letter-spacing: .05em; padding: 12px 38px 12px 15px;
+    transition: border-color .2s, background .2s;
+  }
+  select.cur:hover { border-color: rgba(148,163,184,.35); background: var(--raise); }
+  .q { flex: 1; min-width: 0; }
+  .eyebrow { color: var(--muted); font-size: 11.5px; font-weight: 600; letter-spacing: .02em; margin-bottom: 3px; }
+  .quote { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .price { font-size: 40px; font-weight: 750; letter-spacing: -1.2px; line-height: 1.02; }
+  .price.flash-up { animation: flashUp 1.4s var(--ease); }
+  .price.flash-down { animation: flashDown 1.4s var(--ease); }
+  @keyframes flashUp { 0%, 25% { color: var(--up); text-shadow: 0 0 22px rgba(52,211,153,.55); } }
+  @keyframes flashDown { 0%, 25% { color: var(--down); text-shadow: 0 0 22px rgba(248,113,113,.55); } }
+  .chg { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; font-weight: 650; padding: 4px 9px; border-radius: 999px; }
+  .chg.up { color: var(--up); background: rgba(52,211,153,.1); }
+  .chg.down { color: var(--down); background: rgba(248,113,113,.1); }
+  .chg.flat { color: var(--muted); background: rgba(148,163,184,.08); }
   .up { color: var(--up); } .down { color: var(--down); } .flat { color: var(--muted); }
-  .sub { color: var(--muted); font-size: 11.5px; }
-  .sub b { color: #b9c4d6; font-weight: 600; }
+  .sub { color: var(--muted); font-size: 11.5px; margin-top: 6px; }
+  .sub b { color: #c3cddc; font-weight: 600; }
 
   /* overflow:hidden is load-bearing: the tooltip is absolutely positioned, and
      without this a stale offset could extend the page's scroll width and give
      the whole document a horizontal scrollbar. */
-  .chartbox { position: relative; overflow: hidden; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 4px; }
+  .chartbox { position: relative; overflow: hidden; margin: 0 -6px; }
   .chart {
-    display: block; width: 100%; height: 60vh; min-height: 330px; max-height: 600px;
+    display: block; width: 100%; height: 58vh; min-height: 330px; max-height: 580px;
     /* Vertical drags scroll the page; sideways ones are the chart's. */
     touch-action: pan-y;
     /* A long press would otherwise start a text selection or pop the iOS
@@ -471,143 +540,176 @@ TEMPLATE = r"""<!DOCTYPE html>
     -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
   }
   .chart.scrubbing { touch-action: none; }
-  .panels.split .chart { height: 46vh; min-height: 280px; max-height: 460px; }
-  .chart text { fill: var(--muted); font-size: 11px; }
+  .panels.split .chart { height: 44vh; min-height: 280px; max-height: 440px; }
+  .chart text { fill: var(--muted); font-size: 10.5px; }
   .notice {
     position: absolute; inset: auto 0 0 0; margin: 0 auto 14px; width: max-content; max-width: 92%;
-    background: rgba(30,38,54,.94); border: 1px solid var(--line); color: var(--muted);
-    padding: 7px 13px; border-radius: 8px; font-size: 12px; text-align: center;
+    background: rgba(20,26,38,.9); border: 1px solid var(--line-2); color: var(--muted);
+    padding: 7px 13px; border-radius: 10px; font-size: 12px; text-align: center;
   }
   .tip {
-    position: absolute; pointer-events: none; opacity: 0; visibility: hidden;
-    transition: opacity .09s; max-width: calc(100% - 12px);
-    background: rgba(13,17,26,.97); border: 1px solid #2c3648; border-radius: 9px;
-    padding: 9px 11px; min-width: 190px; box-shadow: 0 10px 28px rgba(0,0,0,.55); z-index: 5;
+    position: absolute; pointer-events: none; opacity: 0; visibility: hidden; z-index: 5;
+    max-width: calc(100% - 12px); min-width: 190px; padding: 10px 12px;
+    background: rgba(10,14,22,.78); border: 1px solid var(--line-2); border-radius: 13px;
+    -webkit-backdrop-filter: blur(14px) saturate(150%); backdrop-filter: blur(14px) saturate(150%);
+    box-shadow: 0 16px 40px rgba(0,0,0,.55);
+    transform: translateY(4px) scale(.98); transition: opacity .14s, transform .22s var(--ease), visibility .14s;
   }
-  .tip.show { opacity: 1; visibility: visible; }
-  .tip .when { color: var(--muted); font-size: 11px; margin-bottom: 7px; }
-  .tip .grp { margin-top: 7px; }
+  .tip.show { opacity: 1; visibility: visible; transform: none; }
+  .tip .when { color: var(--muted); font-size: 11px; margin-bottom: 8px; }
+  .tip .grp { margin-top: 8px; }
   .tip .grp:first-of-type { margin-top: 0; }
   .tip .nm { display: flex; align-items: center; gap: 6px; font-weight: 700; font-size: 11.5px; margin-bottom: 3px; }
-  .tip .dot { width: 9px; height: 3px; border-radius: 2px; }
+  .tip .dot { width: 8px; height: 8px; border-radius: 50%; }
   .tip .kv { display: flex; justify-content: space-between; gap: 18px; font-size: 12px; }
   .tip .kv span:first-child { color: var(--muted); }
   .tip .kv.sp span:last-child { color: #b9c4d6; }
   .tip .kv.pick span { color: #fff; font-weight: 700; }
 
-  .stats { width: 100%; border-collapse: collapse; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
-  .stats th, .stats td { padding: 9px 12px; text-align: right; white-space: nowrap; }
-  .stats th { color: var(--muted); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; border-bottom: 1px solid var(--line); }
-  .stats th:first-child, .stats td:first-child { text-align: left; }
-  .stats tbody tr + tr td { border-top: 1px solid #1b2231; }
-  .stats .nm { display: flex; align-items: center; gap: 8px; font-weight: 650; }
-  .stats .dot { width: 11px; height: 3px; border-radius: 2px; }
-  /* Split view halves the width and the eight-column table stopped fitting,
-     putting a scrollbar across the bottom of the left panel. Tightening the
-     cells buys the width back rather than making the reader drag for it. */
-  .panels.split .stats th, .panels.split .stats td { padding: 7px 6px; font-size: 11.5px; }
-  .panels.split .stats th { letter-spacing: .02em; }
+  /* ---- rate cards: one per series, tap to headline it ---- */
+  .tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+  .tile {
+    font: inherit; color: inherit; text-align: left; cursor: pointer; position: relative; overflow: hidden;
+    display: flex; flex-direction: column; gap: 5px; min-width: 0; padding: 13px 14px 12px; border-radius: 14px;
+    background: rgba(255,255,255,.022); border: 1px solid var(--line);
+    transition: border-color .25s, background .3s, transform .25s var(--spring), opacity .25s, box-shadow .3s;
+  }
+  .tile:hover { border-color: var(--line-2); transform: translateY(-2px); }
+  .tile:active { transform: scale(.98); }
+  .tile.on {
+    border-color: color-mix(in srgb, var(--c) 45%, transparent);
+    background: linear-gradient(180deg, color-mix(in srgb, var(--c) 11%, transparent), transparent 75%);
+    box-shadow: 0 14px 34px -22px var(--c);
+  }
+  .tile.off:not(.on) { opacity: .55; }
+  .tile.na { cursor: default; opacity: .45; }
+  .tile.na:hover { transform: none; border-color: var(--line); }
+  .tile .th { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 12px; font-weight: 650; }
+  .tile .th .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--c); box-shadow: 0 0 8px var(--c); }
+  .tile .tag {
+    margin-left: auto; font-size: 9.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--c);
+    opacity: 0; transform: translateX(6px); transition: opacity .25s, transform .3s var(--ease);
+  }
+  .tile.on .tag { opacity: 1; transform: none; }
+  .tile .tv { font-size: 21px; font-weight: 750; letter-spacing: -.4px; }
+  .tile .tv small { font-size: 11px; font-weight: 600; color: var(--muted); letter-spacing: 0; margin-left: 4px; }
+  .tile .tc { font-size: 12px; font-weight: 650; }
+  .tile .spark { display: block; width: 100%; height: 34px; margin: 2px 0; }
+  .tile dl { margin: 2px 0 0; display: grid; grid-template-columns: 1fr 1fr; gap: 3px 14px; font-size: 11.5px; }
+  .tile dl div { display: flex; justify-content: space-between; gap: 8px; min-width: 0; }
+  .tile dt { color: var(--dim); }
+  .tile dd { margin: 0; color: #c3cddc; white-space: nowrap; }
+  .tile .na-msg { color: var(--muted); font-size: 12px; margin-top: 6px; }
+  .panels.split .tile dl { grid-template-columns: 1fr; }
 
-  /* Kept as a fallback for genuinely narrow screens, but slim and dark instead
-     of the platform's default slab. */
-  .scroller { overflow-x: auto; scrollbar-width: thin; scrollbar-color: #2b3547 transparent; }
-  .scroller::-webkit-scrollbar { height: 6px; }
-  .scroller::-webkit-scrollbar-thumb { background: #2b3547; border-radius: 3px; }
-  .scroller::-webkit-scrollbar-track { background: transparent; }
-
-  footer { color: var(--muted); font-size: 11.5px; display: flex; flex-wrap: wrap; gap: 6px 16px; }
-  .warn { color: #fbbf24; }
+  footer { color: var(--muted); font-size: 11.5px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; padding: 0 4px 8px; }
+  .warn { color: var(--warn); }
   /* Cached-and-offline has to announce itself. A rate page that silently shows
      yesterday's numbers as though they were current is worse than one that
      fails outright. */
   #offline[hidden] { display: none; }
   #offline {
-    display: inline-flex; align-items: center; gap: 7px; color: #fbbf24;
+    display: inline-flex; align-items: center; gap: 7px; color: var(--warn);
     background: rgba(251,191,36,.10); border: 1px solid rgba(251,191,36,.35);
     border-radius: 999px; padding: 5px 12px; font-weight: 600;
   }
-  #offline::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: #fbbf24; }
+  #offline::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--warn); }
 
-  /* Phones. The controls break first: three pills and six range buttons cannot
-     share one 360px line, so each row takes the full width instead. */
+  /* Tablets: the toolbar wraps onto a second line before the chips squash. */
+  @media (max-width: 900px) {
+    .toolbar .grow { display: none; }
+  }
+
+  /* Phones. Each control row takes the full width, and the rate cards become
+     a swipeable row instead of three squeezed columns. */
   @media (max-width: 620px) {
-    .wrap { padding: 11px; gap: 11px; }
-    header.brand { gap: 10px; padding-bottom: 10px; }
-    header.brand .logo .plate { padding: 5px 8px; border-radius: 7px; }
+    :root { --pad: 13px; }
+    .wrap { padding: 12px; gap: 12px; }
+    header.brand { gap: 10px; }
+    header.brand .logo .plate { padding: 5px 8px; border-radius: 9px; }
     header.brand .logo svg, header.brand .logo img { height: 26px; max-width: 92px; }
     header.brand .logo > svg { height: 34px; }
-    header.brand .t { font-size: 14.5px; }
-    header.brand a.src { display: none; }
+    header.brand .t { font-size: 15px; }
+    header.brand .s { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    header.brand .t .ver, a.src, .sync, .market .long { display: none; }
+    .market { padding: 5px 10px; font-size: 11px; }
 
-    .globals { gap: 8px; }
-    .globals .field { flex: 1; min-width: 0; }
-    .globals select.sel { flex: 1; min-width: 0; }
-    button.pill { flex: none; }
+    .toolbar { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+    .chips { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, 1fr); }
+    .tg { padding: 9px 6px; font-size: 11.5px; gap: 6px; }
+    /* Buy/Sell and Compare share a row; the ranges get a full one below. */
+    #side { order: 1; justify-self: start; }
+    .switch { order: 2; justify-self: end; }
+    #ranges { order: 3; grid-column: 1 / -1; display: flex; }
+    #ranges button { flex: 1; padding: 10px 4px; }
 
-    .panel .top { align-items: center; gap: 9px 13px; }
-    .price { font-size: 23px; }
-    .chg { font-size: 12.5px; }
-    select.cur { padding: 8px 10px; font-size: 14px; min-width: 88px; }
-
-    .controls { flex-direction: column; align-items: stretch; gap: 9px; }
-    .toggles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
-    .tg { justify-content: center; padding: 9px 6px; font-size: 11.5px; gap: 5px; }
-    .tg .sw { width: 14px; }
-    .ranges { justify-content: space-between; }
-    .ranges button { flex: 1; padding: 9px 4px; }
+    .hero { gap: 10px 14px; }
+    select.cur { font-size: 16px; padding: 10px 34px 10px 12px; }
+    .curpick::after { right: 13px; }
+    .price { font-size: 31px; letter-spacing: -.8px; }
+    .chg { font-size: 12px; }
 
     .chart { height: 44vh; min-height: 270px; }
     /* Stacked on a phone, so both charts have to fit a thumb-scroll apart. */
     .panels.split .chart { height: 36vh; min-height: 230px; }
-    .stats th, .stats td { padding: 8px 9px; font-size: 12px; }
-    .tip { min-width: 168px; padding: 8px 10px; }
+    .tip { min-width: 168px; padding: 9px 10px; }
+
+    .tiles {
+      display: flex; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none;
+      margin: 0 calc(-1 * var(--pad)); padding: 2px var(--pad) 4px; scroll-padding: 0 var(--pad);
+    }
+    .tiles::-webkit-scrollbar { display: none; }
+    .tile { flex: 0 0 80%; scroll-snap-align: start; }
+    .panels.split .tile dl { grid-template-columns: 1fr 1fr; }
   }
 
   @media (max-width: 380px) {
     .tg span:last-child { font-size: 11px; }
-    .price { font-size: 20px; }
+    .price { font-size: 26px; }
   }
 
   @media (max-height: 480px) and (orientation: landscape) {
     .chart { height: 62vh; min-height: 200px; }
     .panels.split .chart { height: 58vh; min-height: 180px; }
   }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+  }
 </style>
 </head>
 <body>
 <div class="wrap">
 
-  <header class="brand">
+  <header class="brand rise" style="--i:0">
     <span class="logo"><!--__LOGO__--></span>
     <div class="who">
       <div class="t">BCA Forex Rates <span class="ver">v<!--__VERSION__--></span></div>
       <div class="s">Kurs history &middot; Bank Central Asia</div>
     </div>
-    <span class="market" id="market" hidden></span>
-    <a class="src" href="https://www.bca.co.id/id/informasi/kurs" target="_blank" rel="noopener noreferrer">Source &#8599;</a>
+    <div class="status">
+      <span class="sync" id="sync"><span class="ring"></span><span id="ago"></span></span>
+      <span class="market" id="market" hidden></span>
+      <a class="src" href="https://www.bca.co.id/id/informasi/kurs" target="_blank" rel="noopener noreferrer">Source &#8599;</a>
+    </div>
   </header>
 
-  <div class="globals">
-    <label class="field">
-      <span>Headline</span>
-      <select class="sel" id="metric"></select>
-    </label>
-    <button class="pill" id="split"><span class="dot"></span>Two charts</button>
-  </div>
-
-  <div class="controls">
-    <div class="toggles" id="toggles"></div>
-    <div class="ranges" id="ranges"></div>
-  </div>
+  <section class="toolbar card rise" style="--i:1">
+    <div class="chips" id="toggles"></div>
+    <div class="grow"></div>
+    <div class="seg" id="side" role="group" aria-label="Headline side"><span class="thumb"></span></div>
+    <div class="seg" id="ranges" role="group" aria-label="Range"><span class="thumb"></span></div>
+    <button class="switch" id="split" aria-pressed="false"><span class="track"><span class="knob"></span></span>Compare</button>
+  </section>
 
   <div class="panels" id="panels"></div>
 
-  <footer>
+  <footer class="rise" style="--i:3">
     <span id="offline" hidden>Offline — showing last synced data</span>
     <span id="cov"></span>
     <span id="stamp"></span>
     <span id="fails"></span>
-    <span>Times are WIB (UTC+7). Buy = solid, sell = dashed, shaded band = spread.</span>
+    <span>Times are WIB (UTC+7). Buy = solid, sell = dashed, shaded band = spread. Tap a rate card to headline it.</span>
   </footer>
 </div>
 
@@ -624,9 +726,51 @@ const RANGES = [
 ];
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 const SIDES = ["Buy", "Sell"];
+const NAMES = {
+  AED: "UAE Dirham", AUD: "Australian Dollar", CAD: "Canadian Dollar", CHF: "Swiss Franc",
+  CNH: "Chinese Yuan (offshore)", DKK: "Danish Krone", EUR: "Euro", GBP: "British Pound",
+  HKD: "Hong Kong Dollar", JPY: "Japanese Yen", KRW: "South Korean Won", MYR: "Malaysian Ringgit",
+  NZD: "New Zealand Dollar", SAR: "Saudi Riyal", SEK: "Swedish Krona", SGD: "Singapore Dollar",
+  THB: "Thai Baht", USD: "US Dollar",
+};
 
 const nf = new Intl.NumberFormat("id-ID", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmt = v => (v == null || !isFinite(v)) ? "—" : nf.format(v);
+const signed = v => (v > 0 ? "+" : "") + fmt(v);
+const arrow = d => d > 0 ? "▲" : d < 0 ? "▼" : "•";
+
+// Motion is decoration. Anyone who has asked their OS for less of it gets
+// none: no reveal, no count-up, no pulse (the CSS side switches off too).
+const CALM = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const REVEAL_MS = 750;
+
+// Count a number up or down to its new value instead of swapping it, so a
+// change of currency or range reads as movement rather than a flicker.
+function tweenNumber(node, to) {
+  const from = parseFloat(node.dataset.v);
+  node.dataset.v = to == null ? "" : to;
+  cancelAnimationFrame(node._raf);
+  if (to == null || CALM || !isFinite(from) || from === to) { node.textContent = fmt(to); return; }
+  const t0 = performance.now(), D = 520;
+  const step = now => {
+    const k = Math.min(1, (now - t0) / D), e = 1 - Math.pow(1 - k, 3);
+    node.textContent = fmt(from + (to - from) * e);
+    if (k < 1) node._raf = requestAnimationFrame(step);
+  };
+  node._raf = requestAnimationFrame(step);
+}
+
+// The sliding thumb behind a segmented control's chosen button.
+function slideThumb(seg) {
+  const thumb = seg.querySelector(".thumb"), on = seg.querySelector("button.on");
+  if (!on) { thumb.style.opacity = 0; return; }
+  thumb.style.opacity = 1;
+  thumb.style.width = on.offsetWidth + "px";
+  thumb.style.transform = `translateX(${on.offsetLeft}px)`;
+  // Placed without a transition the first time, so the page does not open
+  // with every thumb flying in from the left edge.
+  if (!seg.classList.contains("ready")) requestAnimationFrame(() => seg.classList.add("ready"));
+}
 
 // WIB is a fixed +7 with no DST, so shifting the epoch and reading UTC parts is
 // exact — and, unlike toLocaleString, it cannot be moved by the viewer's own
@@ -665,6 +809,7 @@ const state = {
   split: false,
   hoverT: null,      // hover is shared by TIME, so both panels track together
   tipOwner: null,    // ...but only the panel under the pointer shows a tooltip
+  fresh: false,      // true for the one render after a live refresh brought new data
 };
 
 const panels = [];
@@ -709,9 +854,10 @@ function niceTicks(min, max, count) {
 /* ---------- one chart panel ----------------------------------------------- */
 
 const PANEL_HTML = `
-  <div class="top">
-    <select class="sel cur"></select>
-    <div style="flex:1;min-width:0">
+  <div class="hero">
+    <label class="curpick"><select class="cur" aria-label="Currency"></select></label>
+    <div class="q">
+      <div class="eyebrow"></div>
       <div class="quote"><span class="price">—</span><span class="chg"></span></div>
       <div class="sub"></div>
     </div>
@@ -721,28 +867,40 @@ const PANEL_HTML = `
     <div class="tip"></div>
     <div class="notice" hidden></div>
   </div>
-  <div class="scroller">
-    <table class="stats">
-      <thead><tr>
-        <th>Series</th><th>Buy</th><th>Sell</th><th>Spread</th><th>Spread %</th>
-        <th>High</th><th>Low</th><th>Change</th>
-      </tr></thead>
-      <tbody></tbody>
-    </table>
-  </div>`;
+  <div class="tiles"></div>`;
+
+let panelSeq = 0;
 
 function makePanel(code) {
   const root = document.createElement("section");
-  root.className = "panel";
+  root.className = "panel card rise";
+  root.style.setProperty("--i", 2);
   root.innerHTML = PANEL_HTML;
   const q = s => root.querySelector(s);
   const svg = q(".chart"), tip = q(".tip"), notice = q(".notice"), sel = q("select.cur");
-  const priceEl = q(".price"), chgEl = q(".chg"), subEl = q(".sub"), body = q("tbody");
+  const priceEl = q(".price"), chgEl = q(".chg"), subEl = q(".sub"), eyebrowEl = q(".eyebrow");
+  const tilesEl = q(".tiles");
+  const uid = "p" + (++panelSeq);          // ids for this panel's SVG gradients and clip
   let cur = code, view = null, pan = 0;   // pan: points the window is slid back
+  let revealAt = 0, tilesKey = "";
+
+  // Wipe the lines in from the left. Timed rather than one-shot: a render
+  // landing mid-wipe (the second panel, a hover) carries it on from where it
+  // was instead of snapping it to the end.
+  function reveal() { revealAt = performance.now(); }
+  reveal();
 
   sel.innerHTML = DATA.currencies.map(c => `<option>${c}</option>`).join("");
   sel.value = cur;
-  sel.addEventListener("change", () => { cur = sel.value; pan = 0; syncControls(); renderAll(); savePrefs(); });
+  sel.addEventListener("change", () => {
+    cur = sel.value; pan = 0; reveal(); syncControls(); renderAll(); savePrefs();
+  });
+
+  // A rate card puts its series in the headline, on whichever side is chosen.
+  tilesEl.addEventListener("click", e => {
+    const b = e.target.closest(".tile[data-k]");
+    if (b) setMetric(b.dataset.k, state.metric.side);
+  });
 
   // The visible slice, plus any pan. Pan slides an equal-width window back
   // through the stored history — 0 keeps it anchored to the newest point, the
@@ -794,7 +952,7 @@ function makePanel(code) {
       svg.innerHTML = `<text x="${W / 2}" y="${H / 2}" text-anchor="middle">${
         !series.length ? "No series selected" : "No data for this currency"}</text>`;
       view = null; notice.hidden = true;
-      renderQuote([]); renderStats([], []);
+      renderQuote([]); renderTiles([]);
       return;
     }
 
@@ -819,6 +977,17 @@ function makePanel(code) {
     const yOf = v => M.t + (1 - (v - lo) / (hi - lo)) * ih;
 
     const parts = [];
+
+    // A top-to-bottom fade per series for the spread band, and the clip that
+    // wipes the lines in after a change of currency or range.
+    const since = performance.now() - revealAt;
+    const wiping = !CALM && since < REVEAL_MS;
+    parts.push(`<defs>${series.map(s => `<linearGradient id="${uid}-g-${s.key}" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="${COLORS[s.key]}" stop-opacity=".2"/>
+        <stop offset="1" stop-color="${COLORS[s.key]}" stop-opacity=".03"/></linearGradient>`).join("")}
+      <clipPath id="${uid}-clip"><rect x="0" y="0" width="${wiping ? 0 : W}" height="${H}">${wiping
+        ? `<animate class="rv" attributeName="width" from="0" to="${W}" dur="${REVEAL_MS}ms" begin="indefinite" fill="freeze" calcMode="spline" keyTimes="0;1" keySplines=".22 1 .36 1"/>`
+        : ""}</rect></clipPath></defs>`);
 
     // Current-value flags for the headlined side, de-collided up front so two
     // near-equal rates (18,000 and 18,010) do not stack their labels on top of
@@ -849,7 +1018,7 @@ function makePanel(code) {
     for (const v of niceTicks(lo, hi, Math.max(3, Math.min(8, Math.round(ih / 54))))) {
       const y = yOf(v);
       if (y < M.t - 1 || y > M.t + ih + 1) continue;
-      parts.push(`<line x1="${M.l}" y1="${y.toFixed(1)}" x2="${M.l + iw}" y2="${y.toFixed(1)}" stroke="#1c2433"/>`);
+      parts.push(`<line x1="${M.l}" y1="${y.toFixed(1)}" x2="${M.l + iw}" y2="${y.toFixed(1)}" stroke="#94a3b8" stroke-opacity=".08"/>`);
       // Drop the axis number when a value flag already occupies that row.
       if (!flags.some(f => Math.abs(f.y - y) < 9))
         parts.push(`<text x="${M.l + iw + 8}" y="${(y + 3.5).toFixed(1)}">${fmt(v)}</text>`);
@@ -882,24 +1051,41 @@ function makePanel(code) {
     const step = Math.max(1, Math.floor((idx.length - 1) / (want - 1)) || 1);
     const label = spanSec > 86400 * 2 ? fmtDay : fmtTime;
     const seen = new Set();
+    // Under the crosshair's time badge, the axis label would only peek out.
+    const hv0 = hoverIndex(), hx = hv0 >= 0 && idx.includes(hv0) ? xOf(hv0) : null;
     for (let k = 0; k < idx.length; k += step) {
       const i = idx[k], x = xOf(i), txt = label(t[i]);
       if (seen.has(txt) && idx.length > 2) continue;
       seen.add(txt);
+      if (hx != null && Math.abs(x - hx) < 80) continue;
       const anchor = x < M.l + 26 ? "start" : x > M.l + iw - 26 ? "end" : "middle";
       parts.push(`<line x1="${x.toFixed(1)}" y1="${M.t + ih}" x2="${x.toFixed(1)}" y2="${M.t + ih + 4}" stroke="#2a3345"/>`);
       parts.push(`<text x="${x.toFixed(1)}" y="${M.t + ih + 17}" text-anchor="${anchor}">${txt}</text>`);
     }
 
-    // The scraper never spaces reads more than an hour apart — hourly even when
-    // closed — so any jump past ~90 min is a genuine outage (the process was
-    // down), not the normal overnight cadence. That is the only thing that
-    // breaks a line; closed hours have data and draw straight through.
-    const OUTAGE = 90 * 60;
+    // On weekdays the scraper never spaces reads more than an hour apart —
+    // hourly even when closed — so any jump past ~90 min is a genuine outage
+    // (the process was down), not the normal overnight cadence. That is the
+    // only thing that breaks a line; closed hours have data and draw straight
+    // through. Weekends are read every 3 h, so a gap that starts on a Saturday or Sunday
+    // (Sun 21:00 -> Mon 00:00 included) is allowed 3.5 h before it counts.
+    const OUTAGE = 90 * 60, WEEKEND_OUTAGE = 210 * 60;
+    const isOutage = (a, b) => {
+      const day = new Date((a + 7 * 3600) * 1000).getUTCDay();
+      return b - a > (day === 0 || day === 6 ? WEEKEND_OUTAGE : OUTAGE);
+    };
 
     const GAP = "#6b7890";  // grey for the bridge across a gap — clearly not a rate line
-    for (const s of series) {
+    parts.push(`<g clip-path="url(#${uid}-clip)">`);
+    // The headline series first in the eye: drawn last and at full strength,
+    // the others stepped back. Three bands at equal weight over a long range
+    // read as one tangle.
+    const ordered = series.filter(s => s.key !== state.metric.key)
+      .concat(series.filter(s => s.key === state.metric.key));
+    for (const s of ordered) {
       const [buy, sell] = rec[s.key], c = COLORS[s.key];
+      const lead = s.key === state.metric.key || series.length === 1;
+      parts.push(`<g opacity="${lead ? 1 : 0.42}">`);
 
       // Break the series into contiguous runs — a run ends on a null or a real
       // outage — then draw each, and bridge the breaks separately.
@@ -907,7 +1093,7 @@ function makePanel(code) {
       let run = [];
       for (const i of idx) {
         if (buy[i] == null || sell[i] == null) { if (run.length) runs.push(run), run = []; continue; }
-        if (run.length && t[i] - t[run[run.length - 1]] > OUTAGE) runs.push(run), run = [];
+        if (run.length && isOutage(t[run[run.length - 1]], t[i])) runs.push(run), run = [];
         run.push(i);
       }
       if (run.length) runs.push(run);
@@ -925,9 +1111,9 @@ function makePanel(code) {
         if (run.length > 1) {
           const up = run.map(i => `${xOf(i).toFixed(1)},${yOf(buy[i]).toFixed(1)}`);
           const dn = run.slice().reverse().map(i => `${xOf(i).toFixed(1)},${yOf(sell[i]).toFixed(1)}`);
-          parts.push(`<path d="M${up.join("L")}L${dn.join("L")}Z" fill="${c}" fill-opacity=".11"/>`);
-          parts.push(`<path d="M${up.join("L")}" fill="none" stroke="${c}" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>`);
-          parts.push(`<path d="M${run.map(i => `${xOf(i).toFixed(1)},${yOf(sell[i]).toFixed(1)}`).join("L")}" fill="none" stroke="${c}" stroke-width="1.5" stroke-dasharray="5 3.5" stroke-linecap="round"/>`);
+          parts.push(`<path d="M${up.join("L")}L${dn.join("L")}Z" fill="url(#${uid}-g-${s.key})" fill-opacity="${lead ? 1 : .45}"/>`);
+          parts.push(`<path d="M${up.join("L")}" fill="none" stroke="${c}" stroke-width="${lead ? 1.9 : 1.4}" stroke-linejoin="round" stroke-linecap="round"/>`);
+          parts.push(`<path d="M${run.map(i => `${xOf(i).toFixed(1)},${yOf(sell[i]).toFixed(1)}`).join("L")}" fill="none" stroke="${c}" stroke-width="${lead ? 1.6 : 1.2}" stroke-dasharray="5 3.5" stroke-linecap="round"/>`);
         }
         // No per-point dots — on a dense line they are just clutter. The one
         // exception is a lone sample between gaps: it has no line to sit on, so
@@ -938,7 +1124,23 @@ function makePanel(code) {
           parts.push(`<circle cx="${xOf(i).toFixed(1)}" cy="${yOf(sell[i]).toFixed(1)}" r="2.6" fill="${c}" fill-opacity=".45" stroke="${c}" stroke-width="1"/>`);
         }
       }
+      parts.push(`</g>`);
+    }
+    parts.push(`</g>`);
 
+    // A live dot on the newest headline reading, pulsing, while the view is
+    // anchored to now. Panned back into history it would be a lie.
+    const hm0 = state.metric;
+    if (!pan && state.on[hm0.key] && rec[hm0.key]) {
+      const arm = rec[hm0.key][hm0.side];
+      const last = [...idx].reverse().find(i => arm[i] != null);
+      if (last != null && last === t.length - 1) {
+        const x = xOf(last).toFixed(1), y = yOf(arm[last]).toFixed(1), c = COLORS[hm0.key];
+        if (!CALM) parts.push(`<circle cx="${x}" cy="${y}" r="4" fill="none" stroke="${c}" stroke-width="1.5">
+          <animate attributeName="r" values="4;13" dur="2s" repeatCount="indefinite"/>
+          <animate attributeName="stroke-opacity" values=".8;0" dur="2s" repeatCount="indefinite"/></circle>`);
+        parts.push(`<circle cx="${x}" cy="${y}" r="3.6" fill="${c}" stroke="#06080d" stroke-width="1.5"/>`);
+      }
     }
 
     // The de-collided value flags, drawn over the lines so they stay readable.
@@ -975,12 +1177,27 @@ function makePanel(code) {
       parts.push(`<line x1="${x.toFixed(1)}" y1="${M.t}" x2="${x.toFixed(1)}" y2="${M.t + ih}" stroke="#5f6f8c" stroke-dasharray="3 3"/>`);
       for (const s of series) {
         for (const arm of rec[s.key]) {
-          if (arm[hv] != null) parts.push(`<circle cx="${x.toFixed(1)}" cy="${yOf(arm[hv]).toFixed(1)}" r="4" fill="${COLORS[s.key]}" stroke="#0b0e14" stroke-width="1.5"/>`);
+          if (arm[hv] != null) parts.push(`<circle cx="${x.toFixed(1)}" cy="${yOf(arm[hv]).toFixed(1)}" r="4" fill="${COLORS[s.key]}" stroke="#06080d" stroke-width="1.5"/>`);
         }
       }
+      // Read-outs on both axes, the way a trading chart pins the crosshair:
+      // the headline value on the right edge, the time along the bottom.
+      const hk = rec[state.metric.key], hval = hk && state.on[state.metric.key] ? hk[state.metric.side][hv] : null;
+      if (hval != null) {
+        const y = yOf(hval), c = COLORS[state.metric.key];
+        parts.push(`<line x1="${M.l}" y1="${y.toFixed(1)}" x2="${M.l + iw}" y2="${y.toFixed(1)}" stroke="${c}" stroke-opacity=".45" stroke-dasharray="3 3"/>`);
+        parts.push(`<rect x="${M.l + iw + 2}" y="${(y - 9).toFixed(1)}" width="${M.r - 4}" height="18" rx="5" fill="${c}"/>`);
+        parts.push(`<text x="${M.l + iw + 7}" y="${(y + 3.8).toFixed(1)}" fill="#06080d" style="font-weight:750">${fmt(hval)}</text>`);
+      }
+      const when = (spanSec > 86400 * 2 ? fmtDay(t[hv]) + " " : "") + fmtTime(t[hv]);
+      const tw = when.length * 6.2 + 16, tx = Math.max(M.l, Math.min(M.l + iw - tw, x - tw / 2));
+      parts.push(`<rect x="${tx.toFixed(1)}" y="${M.t + ih + 4}" width="${tw.toFixed(1)}" height="18" rx="5" fill="#1c2433" stroke="#94a3b8" stroke-opacity=".25"/>`);
+      parts.push(`<text x="${(tx + tw / 2).toFixed(1)}" y="${M.t + ih + 16.5}" text-anchor="middle" fill="#e8eef8" style="font-weight:650">${when}</text>`);
     }
 
     svg.innerHTML = parts.join("");
+    const rv = wiping && svg.querySelector("animate.rv");
+    if (rv) { try { rv.beginElementAt(-since / 1000); } catch (_) {} }
     view = { idx, xOf, iw, width: idx.length };
 
     const n = idx.length;
@@ -992,15 +1209,17 @@ function makePanel(code) {
     }
 
     renderQuote(idx);
-    renderStats(series, idx);
+    renderTiles(idx);
   }
 
   function renderQuote(idx) {
     const rec = DATA.data[cur];
     const m = state.metric, meta = DATA.series.find(s => s.key === m.key);
     const arms = rec && rec[m.key];
+    eyebrowEl.textContent = (NAMES[cur] || cur) + " · " + meta.label + " " + SIDES[m.side].toLowerCase();
+    root.style.setProperty("--glow", COLORS[m.key]);
     if (!arms || !idx.length) {
-      priceEl.textContent = "—";
+      tweenNumber(priceEl, null);
       chgEl.textContent = ""; chgEl.className = "chg";
       subEl.innerHTML = arms ? "" : `<b>${meta.label}</b> not offered for ${cur}`;
       return;
@@ -1008,11 +1227,18 @@ function makePanel(code) {
     const pick = arms[m.side], other = arms[1 - m.side];
     const last = [...idx].reverse().find(i => pick[i] != null);
     const first = idx.find(i => pick[i] != null);
-    priceEl.textContent = last == null ? "—" : fmt(pick[last]);
+    const was = parseFloat(priceEl.dataset.v), now = last == null ? null : pick[last];
+    tweenNumber(priceEl, now);
+    // New data from the live refresh flashes the price green or red once.
+    if (state.fresh && now != null && isFinite(was) && was !== now) {
+      priceEl.classList.remove("flash-up", "flash-down");
+      void priceEl.offsetWidth;   // restart the animation
+      priceEl.classList.add(now > was ? "flash-up" : "flash-down");
+    }
 
     if (last != null && first != null && first !== last && pick[first]) {
       const d = pick[last] - pick[first], pct = (d / pick[first]) * 100;
-      chgEl.textContent = (d > 0 ? "+" : "") + fmt(d) + "  (" + (d > 0 ? "+" : "") + pct.toFixed(2) + "%)";
+      chgEl.textContent = arrow(d) + " " + signed(d) + " (" + (d > 0 ? "+" : "") + pct.toFixed(2) + "%)";
       chgEl.className = "chg " + (d > 0 ? "up" : d < 0 ? "down" : "flat");
     } else {
       chgEl.textContent = "unchanged over this range";
@@ -1026,32 +1252,60 @@ function makePanel(code) {
       (last == null ? "" : ` &middot; ${fmtFull(rec.t[last])}`);
   }
 
-  function renderStats(series, idx) {
-    const rec = DATA.data[cur];
-    if (!series.length) { body.innerHTML = `<tr><td colspan="8" style="color:var(--muted)">Nothing selected.</td></tr>`; return; }
-    body.innerHTML = series.map(s => {
-      const [buy, sell] = rec[s.key];
-      const track = rec[s.key][state.metric.side];   // high/low/change follow the headline side
-      const vals = idx.map(i => track[i]).filter(v => v != null);
-      const last = [...idx].reverse().find(i => track[i] != null);
-      const first = idx.find(i => track[i] != null);
-      const hi = vals.length ? Math.max(...vals) : null, lowv = vals.length ? Math.min(...vals) : null;
+  // One card per series: the chosen side's latest value, its change and a
+  // sparkline over the range, then buy, sell, spread, high and low. Every
+  // series gets a card, switched off or not offered included, so the row
+  // never reshuffles. Hover re-renders the chart constantly; the cards only
+  // change with the inputs below, so they skip those renders.
+  function renderTiles(idx) {
+    const rec = DATA.data[cur], side = state.metric.side;
+    const key = [cur, idx[0], idx[idx.length - 1], idx.length, state.metric.key, side,
+                 DATA.series.map(s => +!!state.on[s.key]).join(""), newestStamp(DATA)].join("|");
+    if (key === tilesKey) return;
+    tilesKey = key;
+    tilesEl.innerHTML = DATA.series.map(s => {
+      const c = COLORS[s.key], arms = rec && rec[s.key];
+      if (!arms) {
+        return `<div class="tile na" style="--c:${c}"><div class="th"><span class="dot"></span>${s.label}</div>
+          <div class="na-msg">Not offered for ${cur}</div></div>`;
+      }
+      const [buy, sell] = arms, track = arms[side];   // value, change, high, low follow the chosen side
+      const pts = idx.filter(i => track[i] != null);
+      const last = pts[pts.length - 1], first = pts[0];
+      const vals = pts.map(i => track[i]);
+      const hi = vals.length ? Math.max(...vals) : null, lo = vals.length ? Math.min(...vals) : null;
       const b = last == null ? null : buy[last], sv = last == null ? null : sell[last];
       const sp = (b != null && sv != null) ? sv - b : null;
       let chg = "—", cls = "flat";
-      if (last != null && first != null && track[first]) {
+      if (last != null && first != null && first !== last && track[first]) {
         const d = track[last] - track[first];
-        chg = (d > 0 ? "+" : "") + fmt(d) + " (" + (d > 0 ? "+" : "") + ((d / track[first]) * 100).toFixed(2) + "%)";
+        chg = arrow(d) + " " + signed(d) + " (" + (d > 0 ? "+" : "") + ((d / track[first]) * 100).toFixed(2) + "%)";
         cls = d > 0 ? "up" : d < 0 ? "down" : "flat";
       }
-      return `<tr>
-        <td><span class="nm"><span class="dot" style="background:${COLORS[s.key]}"></span>${s.label}</span></td>
-        <td>${fmt(b)}</td><td>${fmt(sv)}</td>
-        <td>${fmt(sp)}</td>
-        <td>${sp == null || !b ? "—" : ((sp / b) * 100).toFixed(3) + "%"}</td>
-        <td>${fmt(hi)}</td><td>${fmt(lowv)}</td>
-        <td class="${cls}">${chg}</td>
-      </tr>`;
+      // ~100 points is plenty at card width; striding keeps a year of data cheap.
+      let spark = "";
+      if (vals.length > 1) {
+        const stride = Math.ceil(vals.length / 100), sv2 = vals.filter((_, k) => k % stride === 0 || k === vals.length - 1);
+        const span = (hi - lo) || 1, n = sv2.length - 1;
+        const xy = sv2.map((v, k) => `${(k / n * 100).toFixed(2)},${(28 - (v - lo) / span * 26).toFixed(2)}`);
+        spark = `<svg class="spark" viewBox="0 0 100 30" preserveAspectRatio="none" aria-hidden="true">
+          <path d="M0,30L${xy.join("L")}L100,30Z" fill="${c}" fill-opacity=".1"/>
+          <path d="M${xy.join("L")}" fill="none" stroke="${c}" stroke-width="1.6" stroke-linejoin="round" vector-effect="non-scaling-stroke"/></svg>`;
+      }
+      const head = s.key === state.metric.key;
+      return `<button class="tile${head ? " on" : ""}${state.on[s.key] ? "" : " off"}" data-k="${s.key}" style="--c:${c}"
+                aria-pressed="${head}" title="Headline ${s.label} ${SIDES[side].toLowerCase()}">
+        <div class="th"><span class="dot"></span>${s.label}<span class="tag">Headline</span></div>
+        <div class="tv">${fmt(last == null ? null : track[last])}<small>${SIDES[side].toLowerCase()}</small></div>
+        <div class="tc ${cls}">${chg}</div>
+        ${spark}
+        <dl>
+          <div><dt>Buy</dt><dd>${fmt(b)}</dd></div><div><dt>Sell</dt><dd>${fmt(sv)}</dd></div>
+          <div><dt>Spread</dt><dd>${fmt(sp)}</dd></div>
+          <div><dt>Spread %</dt><dd>${sp == null || !b ? "—" : ((sp / b) * 100).toFixed(3) + "%"}</dd></div>
+          <div><dt>High</dt><dd>${fmt(hi)}</dd></div><div><dt>Low</dt><dd>${fmt(lo)}</dd></div>
+        </dl>
+      </button>`;
     }).join("");
   }
 
@@ -1258,7 +1512,7 @@ function makePanel(code) {
   svg.addEventListener("pointerleave", e => { if (fromMouse(e) && mode !== "pan") clearHover(); });
 
   const api = {
-    root, render, hideTip,
+    root, render, hideTip, reveal,
     resetPan() { pan = 0; },
     get currency() { return cur; },
     set currency(v) { cur = v; sel.value = v; },
@@ -1273,19 +1527,40 @@ function renderAll() {
   if (state.tipOwner) panels.forEach(p => { if (p !== state.tipOwner) p.hideTip(); });
 }
 
-function buildMetric() {
-  const opts = [];
-  for (const s of DATA.series) for (let side = 0; side < 2; side++) {
-    opts.push(`<option value="${s.key}:${side}">${s.label} ${SIDES[side]}</option>`);
-  }
-  el("metric").innerHTML = opts.join("");
-  el("metric").value = `${state.metric.key}:${state.metric.side}`;
-  el("metric").addEventListener("change", e => {
-    const [key, side] = e.target.value.split(":");
-    state.metric = { key, side: +side };
-    // headlining a series nobody can see is a dead number, so switch it on
-    if (!state.on[key]) { state.on[key] = true; syncControls(); }
-    renderAll(); savePrefs();
+// The headline is a series x side pair: the rate cards pick the series, the
+// Buy / Sell segment the side, so every one of the six is a tap away.
+function setMetric(key, side) {
+  const same = state.metric.key === key && state.metric.side === side;
+  state.metric = { key, side };
+  // headlining a series nobody can see is a dead number, so switch it on
+  if (!state.on[key]) state.on[key] = true;
+  el("side").querySelectorAll("button").forEach(b => b.classList.toggle("on", +b.dataset.side === side));
+  slideThumb(el("side"));
+  if (same) return;
+  syncControls(); renderAll(); savePrefs();
+}
+
+function buildSide() {
+  el("side").insertAdjacentHTML("beforeend",
+    SIDES.map((label, side) => `<button data-side="${side}" class="${side === state.metric.side ? "on" : ""}">${label}</button>`).join(""));
+  el("side").querySelectorAll("button").forEach(b =>
+    b.addEventListener("click", () => setMetric(state.metric.key, +b.dataset.side)));
+}
+
+// Built once and then only re-flagged, so the sliding thumb survives a
+// change of currency or a live refresh instead of being rebuilt under it.
+function buildRanges() {
+  el("ranges").insertAdjacentHTML("beforeend",
+    RANGES.map(r => `<button data-r="${r.k}" class="${state.range === r.k ? "on" : ""}">${r.k}</button>`).join(""));
+  el("ranges").querySelectorAll("button").forEach(b => {
+    b.addEventListener("click", () => {
+      if (state.range === b.dataset.r) return;
+      state.range = b.dataset.r;
+      el("ranges").querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b));
+      slideThumb(el("ranges"));
+      state.hoverT = null; panels.forEach(p => { p.resetPan(); p.hideTip(); p.reveal(); });
+      renderAll(); savePrefs();
+    });
   });
 }
 
@@ -1299,7 +1574,7 @@ function syncControls() {
 
   el("toggles").innerHTML = DATA.series.map(s => {
     const has = usable.has(s.key), on = has && state.on[s.key];
-    return `<label class="tg ${on ? "on" : ""} ${has ? "" : "off-data"}" data-k="${s.key}"
+    return `<label class="tg ${on ? "on" : ""} ${has ? "" : "off-data"}" data-k="${s.key}" style="--c:${COLORS[s.key]}"
               title="${has ? "Show buy and sell for " + s.label : s.label + " is not offered for the selected currencies"}">
       <input type="checkbox" ${on ? "checked" : ""} ${has ? "" : "disabled"} data-k="${s.key}">
       <span class="sw"></span><span>${s.label}</span>
@@ -1315,18 +1590,11 @@ function syncControls() {
 
   const t = (DATA.data[shownCurrencies()[0]] || { t: [] }).t;
   const span = t.length > 1 ? t[t.length - 1] - t[0] : 0;
-  el("ranges").innerHTML = RANGES.map(r => {
-    const usableR = r.s === Infinity || span >= r.s * 0.15 || r.s <= 86400;
-    return `<button data-r="${r.k}" class="${state.range === r.k ? "on" : ""}" ${usableR ? "" : "disabled"}>${r.k}</button>`;
-  }).join("");
   el("ranges").querySelectorAll("button").forEach(b => {
-    b.addEventListener("click", () => {
-      state.range = b.dataset.r;
-      el("ranges").querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b));
-      state.hoverT = null; panels.forEach(p => { p.resetPan(); p.hideTip(); });
-      renderAll(); savePrefs();
-    });
+    const r = RANGES.find(x => x.k === b.dataset.r);
+    b.disabled = !(r.s === Infinity || span >= r.s * 0.15 || r.s <= 86400);
   });
+  slideThumb(el("ranges"));
 
   el("cov").textContent = `${t.length} scrape${t.length === 1 ? "" : "s"} stored` +
     (t.length ? ` · ${fmtFull(t[0])} → ${fmtFull(t[t.length - 1])}` : "");
@@ -1342,6 +1610,8 @@ function setSplit(on) {
   const host = el("panels");
   host.classList.toggle("split", on);
   el("split").classList.toggle("on", on);
+  el("split").setAttribute("aria-pressed", on);
+  panels.forEach(p => p.reveal());
 
   if (on && panels.length === 1) {
     const second = makePanel(pick("CNH", panels[0].currency));
@@ -1400,8 +1670,17 @@ async function pullFresh() {
     if (!DATA.currencies.includes(p.currency)) p.currency = DATA.currencies[0];
   });
   syncControls();
-  renderAll();
+  state.fresh = true;
+  try { renderAll(); } finally { state.fresh = false; }
   return true;
+}
+
+// pullFresh with its loading state: the header ring spins while it runs.
+async function sync() {
+  const s = el("sync");
+  s.classList.add("busy"); el("ago").textContent = "Syncing…";
+  try { return await pullFresh(); }
+  finally { s.classList.remove("busy"); updateAgo(); }
 }
 
 function flashUpdated() {
@@ -1410,12 +1689,20 @@ function flashUpdated() {
   setTimeout(() => { cov.style.color = ""; }, 2500);
 }
 
+// How old the newest scrape is, so a page left open says whether it is live.
+function updateAgo() {
+  if (el("sync").classList.contains("busy")) return;
+  const mins = Math.floor((Date.now() / 1000 - newestStamp(DATA)) / 60);
+  el("ago").textContent = "Updated " + (mins < 1 ? "just now" : mins < 60 ? mins + " min ago"
+    : mins < 48 * 60 ? Math.floor(mins / 60) + " h ago" : Math.floor(mins / 1440) + " days ago");
+}
+
 function scheduleRefresh() {
   setTimeout(async () => {
     // Never yank the ground out from under a finger mid-scrub.
     if (state.hoverT != null) { setTimeout(scheduleRefresh, 15000); return; }
     try {
-      if (await pullFresh()) flashUpdated();
+      if (await sync()) flashUpdated();
     } catch (_) {
       /* offline or the NAS is unreachable — the footer badge already says so,
          and the next slot will try again */
@@ -1442,7 +1729,8 @@ function updateMarket() {
   const closed = isClosed(Date.now() / 1000);
   m.hidden = false;
   m.className = "market " + (closed ? "closed" : "open");
-  m.textContent = closed ? "Closed · opens " + nextOpenLabel(Date.now() / 1000) : "Market open";
+  // The "opens …" half is dropped on a phone, where the header has no room.
+  m.innerHTML = closed ? `Closed<span class="long"> · opens ${nextOpenLabel(Date.now() / 1000)}</span>` : "Market open";
 }
 
 const PREFS_KEY = "bca-forex-view";
@@ -1475,7 +1763,8 @@ function init() {
   if (saved.metric && DATA.series.some(s => s.key === saved.metric.key) &&
       (saved.metric.side === 0 || saved.metric.side === 1)) state.metric = saved.metric;
 
-  buildMetric();
+  buildSide();
+  buildRanges();
 
   const savedCur = saved.currencies || [];
   const c0 = DATA.currencies.includes(savedCur[0]) ? savedCur[0] : pick("USD", null);
@@ -1490,17 +1779,19 @@ function init() {
     if (DATA.currencies.includes(savedCur[1])) { panels[1].currency = savedCur[1]; savePrefs(); }
   }
 
-  updateMarket();
-  setInterval(updateMarket, 60000);   // flip at 08:00 / 17:00 without a reload
+  updateMarket(); updateAgo();
+  setInterval(() => { updateMarket(); updateAgo(); }, 30000);   // flip at 08:00 / 16:00 without a reload
 
   el("stamp").textContent = DATA.pageUpdated ? "· BCA page: " + DATA.pageUpdated : "";
   el("fails").innerHTML = DATA.failedRuns
     ? `· <span class="warn">${DATA.failedRuns} failed scrape${DATA.failedRuns === 1 ? "" : "s"}</span>` : "";
 
   syncControls();
+  slideThumb(el("side"));
   renderAll();
   addEventListener("resize", () => {
     state.hoverT = null; panels.forEach(p => p.hideTip());
+    slideThumb(el("side")); slideThumb(el("ranges"));
     renderAll();
   });
 
@@ -1515,7 +1806,7 @@ function init() {
   scheduleRefresh();
   // Coming back to a page left open on a phone should not show yesterday.
   addEventListener("visibilitychange", () => {
-    if (!document.hidden) pullFresh().then(ok => ok && flashUpdated()).catch(() => {});
+    if (!document.hidden) sync().then(ok => ok && flashUpdated()).catch(() => {});
   });
 }
 init();

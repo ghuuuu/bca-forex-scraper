@@ -2,7 +2,7 @@
 
 The whole system on one page: what it does, how the parts fit, the rules it
 keeps, and what was learned about BCA's rates along the way. Current as of
-**0.4.0 (19 Oct 2026)**.
+**0.5.0 (20 Oct 2026)**.
 
 - [`README.md`](README.md): what the project is, commands, chart features, NAS install.
 - [`SETUP.md`](SETUP.md): the deployed system, what to type, what to do when it breaks.
@@ -152,9 +152,14 @@ runs (started_at TEXT, ok INTEGER, currencies INTEGER, message TEXT)
 SVG drawn in plain JavaScript. No libraries, no network needed. It works from
 a USB stick.
 
-- Three rate types drawn as bands: buy solid, sell dashed, spread shaded.
-- Headline picker (default e-Rate sell), high/low/change, two panels with
-  synced crosshair, ranges 1D–ALL.
+- Three rate types drawn as bands: buy solid, sell dashed, spread shaded. The
+  headline series is drawn on top; the others are dimmed.
+- Headline (default e-Rate sell) chosen by tapping a rate card and the
+  Buy / Sell segment. One rate card per series with sparkline and stats.
+  Compare mode adds a second panel with a synced crosshair. Ranges 1D–ALL.
+- Motion: line wipe on change, count-up numbers, pulsing live dot, price
+  flash on refresh, "Updated N min ago" with a sync spinner. All disabled
+  under `prefers-reduced-motion`.
 - Session x-axis: closed hours compress; 1D shades them "Closed".
 - Real data gaps (scraper down) show as a grey dotted bridge.
 - Refetches itself after each slot; remembers currency, range and layout.
@@ -390,6 +395,7 @@ yes, 15:15 no, Saturday no), the tight threshold for both the split
 | 0.2.0 | 6 Aug 2026 | Weekend cadence every 3 h |
 | 0.3.0 | 19 Oct 2026 | JSON API (`latest.json`, `history/<CCY>.json`); `trading_hours` 09:15–15:00; remote deploy over SSH |
 | 0.4.0 | 19 Oct 2026 | `e_rate_tight`, `tt_tight`, `bank_notes_tight` from one formula, on every history row |
+| 0.5.0 | 20 Oct 2026 | Dashboard redesign: rate cards, Buy/Sell segment, Compare switch, motion and loading states |
 
 ---
 

@@ -162,9 +162,12 @@ class TestLogo(unittest.TestCase):
         conn = db_with([(T1, "USD", 1.0, 1.0, 1.0, 1.0, 1.0, 1.0)])
         out = Path(tempfile.mkdtemp()) / "c.html"
         html = build(conn, out)[0].read_text(encoding="utf-8")
-        # the picker is built from DATA.series x [buy, sell] at runtime
+        # a rate card per DATA.series picks the series, the Buy / Sell segment
+        # the side, both at runtime
         self.assertIn('SIDES = ["Buy", "Sell"]', html)
-        self.assertIn("${s.key}:${side}", html)
+        self.assertIn('data-k="${s.key}"', html)
+        self.assertIn('data-side="${side}"', html)
+        self.assertIn("setMetric(b.dataset.k, state.metric.side)", html)
 
     def test_the_placeholder_is_gone_from_the_built_page(self):
         conn = db_with([(T1, "USD", 1.0, 1.0, 1.0, 1.0, 1.0, 1.0)])
