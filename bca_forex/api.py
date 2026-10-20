@@ -3,7 +3,7 @@
 Other apps — downstream services's quotation FX rate first — read rates from here instead
 of scraping the chart page or touching the database:
 
-    GET /api/v1/latest.json        newest scrape, every currency, six rates each
+    GET /api/v1/latest.json        each currency's newest rates, six each
     GET /api/v1/history/USD.json   every stored scrape for one currency
 
 Static files, not a server. The scraper already rewrites `web/` after every
@@ -34,6 +34,7 @@ from .chart import _clean
 from .fetcher import URL
 from .parser import FIELDS
 from .schedule import WIB
+from .store import latest_rows
 
 #: Bump only for a breaking change to the shape below; add fields freely.
 API_VERSION = 1
@@ -134,10 +135,9 @@ def write_api(conn: sqlite3.Connection, directory: Path) -> int:
         "generated": now.isoformat(timespec="seconds"),
     }
 
-    latest = conn.execute(
-        "SELECT * FROM rates WHERE scraped_at = (SELECT MAX(scraped_at) FROM rates) "
-        "ORDER BY currency"
-    ).fetchall()
+    # Rows are stored only when a rate changes (plus an hourly heartbeat), so
+    # each currency's newest row has its own time.
+    latest = latest_rows(conn)
     if not latest:
         return 0
 
@@ -177,16 +177,23 @@ def write_api(conn: sqlite3.Connection, directory: Path) -> int:
         written += 1
 
     def entry(r: sqlite3.Row) -> dict[str, object]:
-        return {**_rates(r), **dict(zip(TIGHT_FIELDS, flags(r)))}
+        # scraped_at here is when this rate last CHANGED (or the last hourly
+        # heartbeat); it was still current at checked_at.
+        return {**_rates(r), **dict(zip(TIGHT_FIELDS, flags(r))), "scraped_at": r["scraped_at"]}
 
-    scraped_at = latest[0]["scraped_at"]
+    newest = max(latest, key=lambda r: r["scraped_at"])
+    ok = conn.execute("SELECT MAX(started_at) FROM runs WHERE ok = 1").fetchone()[0]
+    # The last successful read of BCA's page, changed or not. Never older than
+    # the newest row, which a run that stored it must have come after.
+    checked_at = max(filter(None, [ok, newest["scraped_at"]]))
     _write_json(directory / "latest.json", {
         **meta,
-        "scraped_at": scraped_at,
-        "page_updated": latest[0]["page_updated"],
+        "checked_at": checked_at,
+        "scraped_at": newest["scraped_at"],
+        "page_updated": newest["page_updated"],
         # The clock's view: weekday 09:15-15:00 WIB. Per-currency e_rate_tight
         # below is the measured one, and the one to price from.
-        "trading_hours": in_trading_hours(scraped_at),
+        "trading_hours": in_trading_hours(checked_at),
         "fields": list(FIELDS),
         "rates": {r["currency"]: entry(r) for r in latest},
     })

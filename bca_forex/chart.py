@@ -862,6 +862,8 @@ const state = {
   hoverT: null,      // hover is shared by TIME, so both panels track together
   tipOwner: null,    // ...but only the panel under the pointer shows a tooltip
   fresh: false,      // true for the one render after a live refresh brought new data
+  span: Infinity,    // seconds of history in view (Infinity = everything)...
+  end: null,         // ...ending here, or at the newest scrape when null
 };
 
 const panels = [];
@@ -879,16 +881,83 @@ function activeSeries(cur) {
   return availableSeries(cur).filter(s => state.on[s.key]);
 }
 
-function visibleIndices(cur, range) {
-  const t = (DATA.data[cur] || { t: [] }).t;
-  if (!t.length) return [];
-  const span = RANGES.find(r => r.k === range).s;
-  if (span === Infinity) return t.map((_, i) => i);
-  const cut = t[t.length - 1] - span;
-  const out = [];
-  for (let i = 0; i < t.length; i++) if (t[i] >= cut) out.push(i);
-  // never render a single lonely point when earlier history exists
-  if (out.length < 2 && t.length >= 2) return [t.length - 2, t.length - 1];
+/* ---------- the time window ---------------------------------------------- *
+ *
+ * The view is one span of TIME shared by every panel, so two currencies side
+ * by side always show the same moments. A range button sets the span and
+ * anchors the end to the newest scrape; a drag slides the end back through
+ * history; a pinch changes the span. `end` stays null while anchored, so a
+ * live refresh keeps a default view following new data.
+ */
+const MIN_SPAN = 30 * 60;   // zoomed all the way in: half an hour
+
+function dataBounds() {
+  let lo = Infinity, hi = -Infinity;
+  for (const c of shownCurrencies()) {
+    const t = (DATA.data[c] || { t: [] }).t;
+    if (t.length) { lo = Math.min(lo, t[0]); hi = Math.max(hi, t[t.length - 1]); }
+  }
+  return isFinite(lo) ? [lo, hi] : [0, 1];
+}
+function clampSpan(span) {
+  const [lo, hi] = dataBounds(), full = Math.max(1, hi - lo);
+  return Math.min(full, Math.max(Math.min(MIN_SPAN, full), span));
+}
+function viewWindow() {
+  const [lo, hi] = dataBounds(), span = clampSpan(state.span);
+  const end = state.end == null ? hi : Math.min(hi, Math.max(lo + span, state.end));
+  return [end - span, end];
+}
+function setView(span, end) {
+  const hi = dataBounds()[1];
+  state.span = clampSpan(span);
+  state.end = end >= hi - 1 ? null : end;   // back at the newest scrape: anchor there
+}
+function canPan() {
+  const [lo, hi] = dataBounds();
+  return clampSpan(state.span) < hi - lo;
+}
+// First index whose time is >= x, in a sorted array.
+function lowerBound(t, x) {
+  let a = 0, b = t.length;
+  while (a < b) { const m = (a + b) >> 1; if (t[m] < x) a = m + 1; else b = m; }
+  return a;
+}
+// The closed stretches (weekday nights, whole weekends) inside [t0, t1].
+function closedSpans(t0, t1) {
+  const out = [], DAY = 86400, off = 7 * 3600;
+  for (let m = Math.floor((t0 + off) / DAY) * DAY - off; m < t1; m += DAY) {
+    const day = new Date((m + off) * 1000).getUTCDay();
+    const parts = day === 0 || day === 6 ? [[m, m + DAY]]
+      : [[m, m + OPEN_MIN * 60], [m + CLOSE_MIN * 60, m + DAY]];
+    for (let [a, b] of parts) {
+      a = Math.max(a, t0); b = Math.min(b, t1);
+      if (b <= a) continue;
+      const last = out[out.length - 1];
+      if (last && last[1] >= a) last[1] = b; else out.push([a, b]);
+    }
+  }
+  return out;
+}
+// Axis ticks on round WIB boundaries (whole hours, days, months), not on
+// whichever scrape happens to sit nearby.
+const TICK_STEPS = [300, 900, 1800, 3600, 7200, 10800, 21600, 43200, 86400, 172800, 604800, 1209600];
+function timeTicks(t0, t1, want) {
+  const span = t1 - t0, out = [], off = 7 * 3600;
+  // Past two days the labels are dates, so ticks fall on whole days only.
+  const step = TICK_STEPS.find(s => (span <= 2 * 86400 || s >= 86400) && span / s <= want);
+  if (step) {
+    for (let ts = Math.ceil((t0 + off) / step) * step - off; ts <= t1; ts += step) out.push(ts);
+    return out;
+  }
+  const every = Math.max(1, Math.ceil(span / (30 * 86400) / want));
+  let { y, mo } = wibParts(t0);
+  for (mo++; ; mo++) {
+    if (mo > 11) { mo -= 12; y++; }
+    const ts = Date.UTC(y, mo, 1) / 1000 - off;
+    if (ts > t1) break;
+    if (mo % every === 0) out.push(ts);
+  }
   return out;
 }
 
@@ -933,7 +1002,7 @@ function makePanel(code) {
   const priceEl = q(".price"), chgEl = q(".chg"), subEl = q(".sub"), eyebrowEl = q(".eyebrow");
   const tilesEl = q(".tiles");
   const uid = "p" + (++panelSeq);          // ids for this panel's SVG gradients and clip
-  let cur = code, view = null, pan = 0;   // pan: points the window is slid back
+  let cur = code, view = null;
   let revealAt = 0, tilesKey = "";
 
   // Wipe the lines in from the left. Timed rather than one-shot: a render
@@ -945,7 +1014,7 @@ function makePanel(code) {
   sel.innerHTML = DATA.currencies.map(c => `<option>${c}</option>`).join("");
   sel.value = cur;
   sel.addEventListener("change", () => {
-    cur = sel.value; pan = 0; reveal(); syncControls(); renderAll(); savePrefs();
+    cur = sel.value; reveal(); syncControls(); renderAll(); savePrefs();
   });
 
   // A rate card puts its series in the headline, on whichever side is chosen.
@@ -954,23 +1023,18 @@ function makePanel(code) {
     if (b) setMetric(b.dataset.k, state.metric.side);
   });
 
-  // The visible slice, plus any pan. Pan slides an equal-width window back
-  // through the stored history — 0 keeps it anchored to the newest point, the
-  // default — and is re-clamped here so shrinking data can never strand it.
+  // Indices inside the time window ("core"), and the same plus one either side
+  // ("all"), so the lines run on to the edges of the plot instead of stopping
+  // short at the last point inside it.
   function idxWindow() {
-    const base = visibleIndices(cur, state.range);
-    const n = (DATA.data[cur] || { t: [] }).t.length, width = base.length;
-    const maxPan = Math.max(0, n - width);
-    if (pan > maxPan) pan = maxPan;
-    if (pan < 0) pan = 0;
-    if (!pan || !width) return base;
-    const end = (n - 1) - pan, start = end - (width - 1), out = [];
-    for (let i = start; i <= end; i++) out.push(i);
-    return out;
-  }
-  function canPan() {
-    const base = visibleIndices(cur, state.range);
-    return (DATA.data[cur] || { t: [] }).t.length - base.length > 0;
+    const t = (DATA.data[cur] || { t: [] }).t;
+    const [t0, t1] = viewWindow();
+    const a = lowerBound(t, t0), b = lowerBound(t, t1 + 1e-6) - 1, core = [];
+    for (let i = a; i <= b; i++) core.push(i);
+    const all = core.slice();
+    if (a > 0) all.unshift(a - 1);
+    if (b + 1 < t.length) all.push(b + 1);
+    return { core, all, t0, t1 };
   }
 
   // Hover is stored as a timestamp, not an index, so the second panel lands on
@@ -979,7 +1043,7 @@ function makePanel(code) {
     if (state.hoverT == null) return -1;
     const t = (DATA.data[cur] || { t: [] }).t;
     let best = -1, bd = Infinity;
-    for (const i of idxWindow()) {
+    for (const i of idxWindow().core) {
       const d = Math.abs(t[i] - state.hoverT);
       if (d < bd) { bd = d; best = i; }
     }
@@ -991,7 +1055,9 @@ function makePanel(code) {
     // drag is mid-flight, and every other caller wants a clean, un-shifted plot.
     svg.style.transform = "";
     const rec = DATA.data[cur];
-    const idx = idxWindow();
+    const win = idxWindow();
+    // Zoomed into a gap with nothing inside, the neighbours still have values.
+    const idx = win.core.length ? win.core : win.all, wide = win.all;
     const series = activeSeries(cur);
     const W = svg.clientWidth || 700, H = svg.clientHeight || 380;
     const M = { t: 14, r: 66, b: 26, l: 10 };
@@ -1018,14 +1084,10 @@ function makePanel(code) {
     const pad = (hi - lo) * 0.10; lo -= pad; hi += pad;
 
     const t = rec.t;
-    // Ordinal x-axis: equal width per point, not per elapsed hour. Closed hours
-    // are sampled less often (hourly vs every 15 min), so they compress on their
-    // own and the trading day fills the width — a session chart, the way Moomoo
-    // and TradingView draw one — with no 15-hour overnight block eating space.
-    const rank = new Map();
-    idx.forEach((i, k) => rank.set(i, k));
-    const xOf = i => idx.length === 1 ? M.l + iw / 2
-      : M.l + (rank.get(i) / (idx.length - 1)) * iw;
+    // To scale: x is elapsed time, so scrapes close together sit close together
+    // and a night or a weekend takes the room it really took.
+    const tx = ts => M.l + (ts - win.t0) / ((win.t1 - win.t0) || 1) * iw;
+    const xOf = i => tx(t[i]);
     const yOf = v => M.t + (1 - (v - lo) / (hi - lo)) * ih;
 
     const parts = [];
@@ -1037,8 +1099,8 @@ function makePanel(code) {
     parts.push(`<defs>${series.map(s => `<linearGradient id="${uid}-g-${s.key}" x1="0" y1="0" x2="0" y2="1">
         <stop offset="0" stop-color="${COLORS[s.key]}" stop-opacity=".2"/>
         <stop offset="1" stop-color="${COLORS[s.key]}" stop-opacity=".03"/></linearGradient>`).join("")}
-      <clipPath id="${uid}-clip"><rect x="0" y="0" width="${wiping ? 0 : W}" height="${H}">${wiping
-        ? `<animate class="rv" attributeName="width" from="0" to="${W}" dur="${REVEAL_MS}ms" begin="indefinite" fill="freeze" calcMode="spline" keyTimes="0;1" keySplines=".22 1 .36 1"/>`
+      <clipPath id="${uid}-clip"><rect x="${M.l}" y="${M.t}" width="${wiping ? 0 : iw}" height="${ih}">${wiping
+        ? `<animate class="rv" attributeName="width" from="0" to="${iw}" dur="${REVEAL_MS}ms" begin="indefinite" fill="freeze" calcMode="spline" keyTimes="0;1" keySplines=".22 1 .36 1"/>`
         : ""}</rect></clipPath></defs>`);
 
     // Current-value flags for the headlined side, de-collided up front so two
@@ -1076,40 +1138,28 @@ function makePanel(code) {
         parts.push(`<text x="${M.l + iw + 8}" y="${(y + 3.5).toFixed(1)}">${fmt(v)}</text>`);
     }
 
-    // 1D only: shade the closed spans (nights, weekends) and label the first
-    // one, so the trading day reads at a glance. Longer ranges skip it — they
-    // would be mostly grey, and the ordinal axis already keeps closed hours thin.
-    if (state.range === "1D") {
-      let s0 = -1, labelled = false;
-      const shade = (a, b) => {
-        const x1 = a <= 0 ? M.l : (xOf(idx[a - 1]) + xOf(idx[a])) / 2;
-        const x2 = b >= idx.length - 1 ? M.l + iw : (xOf(idx[b]) + xOf(idx[b + 1])) / 2;
+    // Shade the closed hours (nights, weekends) once zoomed in to a few days,
+    // so the trading day reads at a glance. Further out it would be all grey.
+    if (win.t1 - win.t0 <= 3 * 86400) {
+      let labelled = false;
+      for (const [a, b] of closedSpans(win.t0, win.t1)) {
+        const x1 = tx(a), x2 = tx(b);
         parts.push(`<rect x="${x1.toFixed(1)}" y="${M.t}" width="${(x2 - x1).toFixed(1)}" height="${ih}" fill="#8b97ab" fill-opacity=".06"/>`);
         if (!labelled && x2 - x1 > 34) {
           parts.push(`<text x="${((x1 + x2) / 2).toFixed(1)}" y="${(M.t + 13).toFixed(1)}" text-anchor="middle" fill="#7a879e" style="font-size:10px;letter-spacing:.06em">Closed</text>`);
           labelled = true;
         }
-      };
-      for (let k = 0; k < idx.length; k++) {
-        const closed = isClosed(t[idx[k]]);
-        if (closed && s0 < 0) s0 = k;
-        else if (!closed && s0 >= 0) { shade(s0, k - 1); s0 = -1; }
       }
-      if (s0 >= 0) shade(s0, idx.length - 1);
     }
 
-    const spanSec = t[idx[idx.length - 1]] - t[idx[0]];
-    const want = Math.max(2, Math.min(7, Math.floor(iw / 108)));
-    const step = Math.max(1, Math.floor((idx.length - 1) / (want - 1)) || 1);
-    const label = spanSec > 86400 * 2 ? fmtDay : fmtTime;
-    const seen = new Set();
+    const spanSec = win.t1 - win.t0;
     // Under the crosshair's time badge, the axis label would only peek out.
     const hv0 = hoverIndex(), hx = hv0 >= 0 && idx.includes(hv0) ? xOf(hv0) : null;
-    for (let k = 0; k < idx.length; k += step) {
-      const i = idx[k], x = xOf(i), txt = label(t[i]);
-      if (seen.has(txt) && idx.length > 2) continue;
-      seen.add(txt);
+    for (const ts of timeTicks(win.t0, win.t1, Math.max(4, Math.floor(iw / 70)))) {
+      const x = tx(ts);
       if (hx != null && Math.abs(x - hx) < 80) continue;
+      const p = wibParts(ts), midnight = p.h === 0 && p.mi === 0;
+      const txt = spanSec <= 2 * 86400 && !midnight ? fmtTime(ts) : fmtDay(ts);
       const anchor = x < M.l + 26 ? "start" : x > M.l + iw - 26 ? "end" : "middle";
       parts.push(`<line x1="${x.toFixed(1)}" y1="${M.t + ih}" x2="${x.toFixed(1)}" y2="${M.t + ih + 4}" stroke="#2a3345"/>`);
       parts.push(`<text x="${x.toFixed(1)}" y="${M.t + ih + 17}" text-anchor="${anchor}">${txt}</text>`);
@@ -1143,7 +1193,7 @@ function makePanel(code) {
       // outage — then draw each, and bridge the breaks separately.
       const runs = [];
       let run = [];
-      for (const i of idx) {
+      for (const i of wide) {
         if (buy[i] == null || sell[i] == null) { if (run.length) runs.push(run), run = []; continue; }
         if (run.length && isOutage(t[run[run.length - 1]], t[i])) runs.push(run), run = [];
         run.push(i);
@@ -1183,7 +1233,7 @@ function makePanel(code) {
     // A live dot on the newest headline reading, pulsing, while the view is
     // anchored to now. Panned back into history it would be a lie.
     const hm0 = state.metric;
-    if (!pan && state.on[hm0.key] && rec[hm0.key]) {
+    if (state.end == null && state.on[hm0.key] && rec[hm0.key]) {
       const arm = rec[hm0.key][hm0.side];
       const last = [...idx].reverse().find(i => arm[i] != null);
       if (last != null && last === t.length - 1) {
@@ -1250,9 +1300,9 @@ function makePanel(code) {
     svg.innerHTML = parts.join("");
     const rv = wiping && svg.querySelector("animate.rv");
     if (rv) { try { rv.beginElementAt(-since / 1000); } catch (_) {} }
-    view = { idx, xOf, iw, width: idx.length };
+    view = { idx, xOf, iw, l: M.l };
 
-    const n = idx.length;
+    const n = t.length;
     notice.hidden = n > 3;
     if (!notice.hidden) {
       notice.textContent = n === 1
@@ -1441,53 +1491,83 @@ function makePanel(code) {
     showTip(clientX);
   }
 
-  /* Two touch gestures share the chart, and the job is telling them apart
-   * without stealing the page's own vertical scroll:
+  /* Touch gestures share the chart, and the job is telling them apart without
+   * stealing the page's own vertical scroll:
    *
-   *   drag sideways   -> pan the timeline back and forth through history
+   *   drag sideways   -> pan the time window back and forth through history
+   *   pinch           -> zoom: fingers apart shows less time, together more
    *   press and hold  -> scrub, showing the crosshair and detail tooltip
    *   drag upwards    -> left to the browser, so the page still scrolls
    *
-   * `mode` latches to the FIRST gesture to qualify and nothing else fires until
-   * the finger lifts, so a pan can never trip the hold-to-scrub or vice versa —
-   * that mutual exclusion is what keeps the two from colliding. A press that has
-   * not moved for HOLD_MS becomes a scrub; one that moves sideways first (when
-   * there is history to pan to) becomes a pan.
+   * `mode` latches to the first gesture to qualify and nothing else fires
+   * until the fingers lift, so a pan can never trip the hold-to-scrub or vice
+   * versa. A second finger always wins: whatever the first one started turns
+   * into a pinch. With a mouse, hover scrubs, drag pans, and ctrl+wheel zooms
+   * (a trackpad pinch arrives as exactly that).
    */
   const HOLD_MS = 260, SLOP = 10;
-  let mode = null;              // null | "pan" | "scrub"
-  let holdTimer = null, pid = null, sx = 0, sy = 0, panStart = 0;
+  let mode = null;              // null | "pan" | "scrub" | "pinch" | "done"
+  let holdTimer = null, pid = null, sx = 0, sy = 0;
+  let grab = null;              // the window as it was when a pan or pinch began
+  const touches = new Map();    // pointerId -> clientX of every finger down
 
-  function pointsPerPx() {
-    return (view && view.width > 1 && view.iw) ? (view.width - 1) / view.iw : 0;
+  // 0..1 across the plot area, for keeping a moment under the fingers.
+  function plotFrac(clientX) {
+    if (!view) return 0.5;
+    return (clientX - svg.getBoundingClientRect().left - view.l) / view.iw;
   }
-  // Drag right -> older data slides in from the left (pan grows), the way
-  // grabbing and pulling the paper would move it.
-  //
-  // The window can only ever be whole points — a fractional index has no data
-  // behind it and would blank the slice — but the drag still has to feel
-  // continuous. So the window snaps to the nearest whole point while the drawn
-  // SVG is translated by the leftover fraction of a point. Between whole-point
-  // steps the plot just slides under the finger with no redraw; each time the
-  // drag crosses a point boundary we redraw one point older/newer and the
-  // leftover flips sign, so the redraw and the slide add up to smooth motion.
+  // Pointer events can outrun the screen; draw at most once a frame.
+  let frame = 0;
+  function redraw() {
+    if (!frame) frame = requestAnimationFrame(() => { frame = 0; renderAll(); });
+  }
+  function grabWindow() {
+    const [t0, t1] = viewWindow();
+    grab = { t0, t1, span: t1 - t0 };
+  }
+
+  // Drag right -> older data slides in from the left, the way pulling the
+  // paper would move it. Continuous: time is a real number, so there is no
+  // snapping to whole points.
   function panTo(clientX) {
-    const ppx = pointsPerPx();
-    if (!ppx) return;
-    const wantF = panStart + (clientX - sx) * ppx;   // fractional points slid back
-    const want = Math.round(wantF);
-    if (want !== pan) { pan = want; render(); }       // idxWindow() clamps to the ends
-    // render() may have re-clamped pan at either end; measure the leftover
-    // against the window actually drawn, and cap it at a point so hitting an
-    // end just stops instead of dragging the whole plot off into empty space.
-    const pxPerPoint = view && view.width > 1 ? view.iw / (view.width - 1) : 0;
-    const resid = Math.max(-1, Math.min(1, wantF - pan));
-    svg.style.transform = pxPerPoint ? `translateX(${(resid * pxPerPoint).toFixed(2)}px)` : "";
+    if (!grab || !view) return;
+    setView(grab.span, grab.t1 - (clientX - sx) / view.iw * grab.span);
+    redraw();
+  }
+
+  // Show `span` seconds, with the moment `at` sitting `f` of the way across.
+  function zoomAround(span, at, f) {
+    const s = clampSpan(span);
+    state.range = null; markRanges();      // a pinched span matches no button
+    setView(s, at - f * s + s);
+    redraw();
+  }
+
+  function fingers() {
+    const [a, b] = [...touches.values()];
+    return { d: Math.max(40, Math.abs(a - b)), mid: (a + b) / 2 };
+  }
+  function beginPinch() {
+    clearTimeout(holdTimer);
+    if (mode === "scrub") { state.hoverT = null; state.tipOwner = null; panels.forEach(p => p.hideTip()); }
+    hideTip();
+    mode = "pinch";
+    svg.classList.add("scrubbing");
+    grabWindow();
+    const { d, mid } = fingers();
+    grab.d = d;
+    grab.at = grab.t0 + plotFrac(mid) * grab.span;   // the moment between the fingers
+  }
+  // Spread the fingers to see less time, closer for more; the moment that
+  // started between them stays between them, wherever they move.
+  function pinchTo() {
+    const { d, mid } = fingers();
+    zoomAround(grab.span * grab.d / d, grab.at, plotFrac(mid));
   }
 
   function beginPan() {
     clearTimeout(holdTimer);
-    mode = "pan"; panStart = pan;
+    mode = "pan"; grabWindow();
     state.hoverT = null; hideTip();
     // Capture so the finger can wander off the chart and the pan still tracks.
     try { svg.setPointerCapture(pid); } catch (_) {}
@@ -1496,8 +1576,8 @@ function makePanel(code) {
   function beginScrub(clientX) {
     clearTimeout(holdTimer);
     mode = "scrub";
-    // Capture, so the finger can leave the chart — off the top, onto the stats
-    // table — and the scrub still tracks instead of dying mid-gesture.
+    // Capture, so the finger can leave the chart — off the top, onto the rate
+    // cards — and the scrub still tracks instead of dying mid-gesture.
     try { svg.setPointerCapture(pid); } catch (_) {}
     // touch-action cannot be changed mid-gesture; the browser has already
     // classified this one. The class is for the NEXT gesture, and preventDefault
@@ -1510,16 +1590,30 @@ function makePanel(code) {
   function endGesture() {
     clearTimeout(holdTimer);
     const wasScrub = mode === "scrub";
-    if (mode) { try { svg.releasePointerCapture(pid); } catch (_) {} }
     svg.classList.remove("scrubbing");
-    svg.style.transform = "";            // snap to the whole-point window
-    mode = null; pid = null;
-    if (wasScrub) clearHover();          // panning just leaves the view put
+    mode = null; pid = null; grab = null;
+    if (wasScrub) clearHover();          // panning and zooming leave the view put
+  }
+
+  // A finger lifting. After a pinch, the one left behind does nothing until it
+  // lifts too: letting it pan would jolt the view the moment the pinch ends.
+  function lift(e) {
+    touches.delete(e.pointerId);
+    try { svg.releasePointerCapture(e.pointerId); } catch (_) {}
+    if (touches.size) { if (mode === "pinch") mode = "done"; return; }
+    endGesture();
   }
 
   svg.addEventListener("pointerdown", e => {
-    if (fromMouse(e)) { pid = e.pointerId; sx = e.clientX; sy = e.clientY; panStart = pan; mode = null; return; }
-    pid = e.pointerId; sx = e.clientX; sy = e.clientY; mode = null;
+    if (fromMouse(e)) { pid = e.pointerId; sx = e.clientX; mode = null; return; }
+    touches.set(e.pointerId, e.clientX);
+    if (touches.size === 2) {
+      try { svg.setPointerCapture(e.pointerId); } catch (_) {}
+      beginPinch();
+      return;
+    }
+    if (touches.size > 2 || mode) return;
+    pid = e.pointerId; sx = e.clientX; sy = e.clientY;
     clearTimeout(holdTimer);
     holdTimer = setTimeout(() => { if (pid === e.pointerId && mode === null) beginScrub(sx); }, HOLD_MS);
   });
@@ -1528,8 +1622,8 @@ function makePanel(code) {
     if (fromMouse(e)) {
       if (e.buttons & 1) {                 // button held: drag to pan
         if (mode !== "pan") {
-          mode = "pan"; sx = e.clientX; panStart = pan; state.hoverT = null; hideTip();
-          try { svg.setPointerCapture(pid); } catch (_) {}
+          mode = "pan"; sx = e.clientX; grabWindow(); state.hoverT = null; hideTip();
+          try { svg.setPointerCapture(e.pointerId); } catch (_) {}
         }
         panTo(e.clientX);
       } else {
@@ -1538,7 +1632,9 @@ function makePanel(code) {
       }
       return;
     }
-    if (e.pointerId !== pid) return;
+    if (touches.has(e.pointerId)) touches.set(e.pointerId, e.clientX);
+    if (mode === "pinch") { e.preventDefault(); pinchTo(); return; }
+    if (e.pointerId !== pid || mode === "done") return;
 
     if (mode === null) {
       const dx = e.clientX - sx, dy = e.clientY - sy;
@@ -1553,19 +1649,33 @@ function makePanel(code) {
     if (mode === "pan") panTo(e.clientX); else moveTo(e.clientX);
   }, { passive: false });
 
-  // Lifting the finger ends whatever was going on; a scrub also closes its tip.
   svg.addEventListener("pointerup", e => {
-    if (fromMouse(e)) { if (mode) { try { svg.releasePointerCapture(pid); } catch (_) {} } svg.style.transform = ""; mode = null; pid = null; }
-    else endGesture();
+    if (fromMouse(e)) {
+      if (mode) { try { svg.releasePointerCapture(e.pointerId); } catch (_) {} }
+      mode = null; pid = null; grab = null;
+    } else lift(e);
   });
   svg.addEventListener("pointercancel", e => {
-    if (fromMouse(e)) { svg.style.transform = ""; mode = null; pid = null; } else endGesture();
+    if (fromMouse(e)) { mode = null; pid = null; grab = null; } else lift(e);
   });
   svg.addEventListener("pointerleave", e => { if (fromMouse(e) && mode !== "pan") clearHover(); });
 
+  // ctrl+wheel, and a trackpad pinch (which the browser sends as one), zoom
+  // around the pointer. A plain wheel is left alone so the page still scrolls.
+  svg.addEventListener("wheel", e => {
+    if (!e.ctrlKey || !view) return;
+    e.preventDefault();
+    const [t0, t1] = viewWindow(), f = plotFrac(e.clientX);
+    zoomAround((t1 - t0) * Math.exp(e.deltaY * 0.01), t0 + f * (t1 - t0), f);
+  }, { passive: false });
+
+  // touch-action: pan-y already keeps the browser's own pinch-zoom off the
+  // chart; iOS Safari also wants these, or it zooms the whole page instead.
+  svg.addEventListener("gesturestart", e => e.preventDefault());
+  svg.addEventListener("touchmove", e => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
+
   const api = {
     root, render, hideTip, reveal,
-    resetPan() { pan = 0; },
     get currency() { return cur; },
     set currency(v) { cur = v; sel.value = v; },
   };
@@ -1599,6 +1709,12 @@ function buildSide() {
     b.addEventListener("click", () => setMetric(state.metric.key, +b.dataset.side)));
 }
 
+// Light up the button for the current span; none after a pinch.
+function markRanges() {
+  el("ranges").querySelectorAll("button").forEach(x => x.classList.toggle("on", x.dataset.r === state.range));
+  slideThumb(el("ranges"));
+}
+
 // Built once and then only re-flagged, so the sliding thumb survives a
 // change of currency or a live refresh instead of being rebuilt under it.
 function buildRanges() {
@@ -1610,7 +1726,8 @@ function buildRanges() {
       state.range = b.dataset.r;
       el("ranges").querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b));
       slideThumb(el("ranges"));
-      state.hoverT = null; panels.forEach(p => { p.resetPan(); p.hideTip(); p.reveal(); });
+      setView(RANGES.find(r => r.k === state.range).s, Infinity);
+      state.hoverT = null; panels.forEach(p => { p.hideTip(); p.reveal(); });
       renderAll(); savePrefs();
     });
   });
@@ -1699,10 +1816,12 @@ function msToNextSlot() {
   return (toQuarter * 60 - now.getSeconds()) * 1000 - now.getMilliseconds() + REFRESH_GRACE_MS;
 }
 
+// Rows are stored per currency only when that currency changes, so the newest
+// one can be in any of them, not necessarily the first.
 function newestStamp(d) {
-  const first = d.currencies[0];
-  const t = first ? d.data[first].t : [];
-  return t.length ? t[t.length - 1] : 0;
+  let hi = 0;
+  for (const c of d.currencies) { const t = d.data[c].t; if (t.length) hi = Math.max(hi, t[t.length - 1]); }
+  return hi;
 }
 
 async function pullFresh() {
@@ -1791,7 +1910,7 @@ const PREFS_KEY = "bca-forex-view";
 function savePrefs() {
   try {
     localStorage.setItem(PREFS_KEY, JSON.stringify({
-      range: state.range, metric: state.metric, split: state.split,
+      range: state.range || loadPrefs().range, metric: state.metric, split: state.split,
       currencies: panels.map(p => p.currency),
     }));
   } catch (_) { /* private mode / storage full — remembering is a nicety */ }
@@ -1813,6 +1932,7 @@ function init() {
   // may have vanished since, and a stale range must not wedge the page.
   const saved = loadPrefs();
   if (saved.range && RANGES.some(r => r.k === saved.range)) state.range = saved.range;
+  state.span = RANGES.find(r => r.k === state.range).s;
   if (saved.metric && DATA.series.some(s => s.key === saved.metric.key) &&
       (saved.metric.side === 0 || saved.metric.side === 1)) state.metric = saved.metric;
 

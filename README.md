@@ -46,11 +46,12 @@ contract, the tight-spread formula, and what the data shows about BCA's rates.
 | Command | What it does |
 | --- | --- |
 | `once` | Scrape now and exit. Use with Task Scheduler if you prefer per-run tasks over a long-running service. |
-| `run` | Stay running and scrape on the **trading-hours schedule** (15 min in hours, hourly on weeknights, every 3 h on weekends). |
+| `run` | Stay running and scrape on the **trading-hours schedule** (every minute in hours, hourly on weeknights, every 3 h on weekends), storing only what changed. |
 | `latest` | Print the newest stored scrape (`--json` for machine output). |
 | `export --out rates.csv` | Dump history to CSV. `--currency USD` to narrow it. |
 | `chart --open` | Build `chart.html` from the history and open it. |
 | `status` | Row counts, date range, and how many runs have failed. |
+| `timing` | When BCA actually switches its e-Rate between the wide and tight quote each weekday, and moves its TT and Bank Notes rates. `--currency`, `--days`. |
 
 Add `--db <path>` to any of them to use a different database file.
 
@@ -62,12 +63,13 @@ caveats: [`SETUP.md` → The JSON API](SETUP.md#the-json-api).
 
 Three cadences, Indonesian time, coarsening as the page goes quiet:
 
-- **Trading hours — Mon–Fri 08:00–16:00 WIB:** every 15 minutes (08:00, 08:15,
-  08:30, 08:45…), when BCA actually moves its rates.
-- **Weeknights — Mon–Fri after 16:00 and before 08:00:** once an hour. The live
-  e-Rate tracks global FX and keeps drifting overnight — about 4 hours in 5 still
-  show movement — so hourly earns its keep. 16:00 is caught as the first hourly
-  slot, so the day's close is still recorded.
+- **Trading hours — Mon–Fri 08:30–15:30 WIB:** every minute. BCA switches its
+  e-Rate to the tight dealing quote somewhere between 09:00 and 09:15 and back
+  between 15:00 and 15:15; reading every minute, half an hour either side,
+  catches the exact minute. `timing` reports it.
+- **Weeknights — Mon–Fri outside that:** once an hour. The live e-Rate tracks
+  global FX and keeps drifting overnight — about 4 hours in 5 still show
+  movement — so hourly earns its keep.
 - **Weekends — Sat–Sun:** every 3 hours (00:00, 03:00, 06:00…). Global FX is
   shut, so the e-Rate goes near-static (only ~1 hour in 4 changes) and the
   counter rates freeze entirely. A few currencies still drift, so it does not go
@@ -75,6 +77,13 @@ Three cadences, Indonesian time, coarsening as the page goes quiet:
   measured from the live history, not assumed; tune it with `WEEKEND_STEP_H` in
   `bca_forex/schedule.py`.
 
+- **Stored only when something changed.** A read whose rates match the
+  currency's last stored row writes nothing; only the currencies that moved
+  get a row. On the hour every currency is stored regardless — a heartbeat — so
+  a gap longer than that in the history is a real outage, not a quiet market.
+- **Only the rate table is downloaded.** The read stops at the end of the
+  table, about 118 KB of BCA's ~370 KB page; BCA offers no lighter source (no
+  JSON feed, no compression, no ETag).
 - **Pinned to the clock, not to start-up.** A plain "sleep" loop lands on
   whatever minute the machine booted on and moves on every restart, so the
   history gets sampled at times you cannot predict or line up between runs.
@@ -102,7 +111,8 @@ are idempotent, so an overlapping run cannot duplicate a scrape.
 
 ## The data
 
-One row per (scrape, currency), in `data/bca-forex.sqlite3`:
+One row per (scrape, currency) — written when that currency's rates changed,
+or on the hourly heartbeat — in `data/bca-forex.sqlite3`:
 
 | column | |
 | --- | --- |
@@ -172,12 +182,13 @@ double-clicks it.
   still scrolls the page, so the chart does not hijack the phone. The crosshair
   pins the headline value on the price axis and the time on the date axis.
 - **Ranges** 1D / 1W / 1M / 3M / 1Y / ALL, greyed out until there is history
-  behind them.
-- **Session x-axis.** Points are spaced evenly, not by wall-clock time, so the
-  quietly-sampled closed hours compress and the trading day fills the width — a
-  session chart, the way Moomoo/TradingView draw one. In **1D** the closed span
-  (nights, weekends) is shaded grey and labelled **"Closed"**; longer ranges
-  just run the line straight through, no grey.
+  behind them. **Pinch** on a touchscreen to zoom in or out around your
+  fingers (down to half an hour), and **drag** sideways to move through time.
+  On a computer, drag to move and ctrl+scroll (or a trackpad pinch) to zoom.
+- **Time to scale.** The x-axis is real time: readings a minute apart sit
+  close together, a night or a weekend takes the width it really took. Ticks
+  fall on round WIB hours, days and months. Zoomed in to three days or less,
+  the closed hours (nights, weekends) are shaded grey and labelled **"Closed"**.
 - **Market badge.** The header shows ● Market open, or ● Closed with the next
   open time, from the current WIB clock.
 - **High / low markers** on the headline line, and it **remembers** your last
@@ -470,7 +481,7 @@ If that happens, save the page and check the attribute names against
 python -m unittest discover -s tests -v
 ```
 
-57 tests, run against a real page saved in `tests/fixtures/`. Beyond parsing,
+65 tests, run against a real page saved in `tests/fixtures/`. Beyond parsing,
 they check the things that would be expensive to get wrong and easy to miss:
 that `17.980,00` reads as 17 980 and not 17.98 (Indonesian decimal separators
 are the reverse of English), that sell is never below buy (which would mean the
@@ -480,7 +491,7 @@ that the slot maths produces exactly 08:00 → 08:15 → 08:30 → 08:45.
 To refresh the fixture from the live page:
 
 ```bat
-python -c "import urllib.request,pathlib; from bca_forex.fetcher import fetch; pathlib.Path('tests/fixtures/bca-kurs.html').write_text(fetch(), encoding='utf-8')"
+python -c "import urllib.request,pathlib; from bca_forex.fetcher import fetch; pathlib.Path('tests/fixtures/bca-kurs.html').write_text(fetch(whole=True), encoding='utf-8')"
 ```
 
 ## Layout

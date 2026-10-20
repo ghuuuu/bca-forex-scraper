@@ -2,8 +2,12 @@
 
 Three cadences, coarsening as the page goes quiet:
 
-- **Trading hours (Mon-Fri 08:00-16:00 WIB): every 15 minutes.** When BCA
-  actually moves its rates.
+- **Trading hours (Mon-Fri 08:30-15:30 WIB): every minute.** When BCA
+  actually moves its rates. BCA switches its e-Rate to the tight dealing quote
+  somewhere between 09:00 and 09:15 and back to the wide one between 15:00 and
+  15:15; the window runs half an hour either side so the exact minute is
+  caught, whichever it turns out to be. Most of these reads store nothing:
+  a row is only written when a rate changed (see is_heartbeat).
 - **Weeknights (Mon-Fri, after 16:00 and before 08:00): hourly.** The live
   e-Rate tracks global FX and keeps drifting through the night — ~4 in 5 hours
   still show movement — so hourly earns its keep; 15-minute sampling of it does
@@ -29,13 +33,12 @@ from datetime import datetime, timedelta, timezone
 
 WIB = timezone(timedelta(hours=7), "WIB")
 
-#: Trading window, in minutes since WIB midnight. 16:00 itself is closed, so it
-#: is caught as the first hourly slot — the day's closing rate still lands.
-OPEN_MIN = 8 * 60    # 08:00
-CLOSE_MIN = 16 * 60  # 16:00
+#: Trading window, in minutes since WIB midnight, both ends included.
+OPEN_MIN = 8 * 60 + 30    # 08:30
+CLOSE_MIN = 15 * 60 + 30  # 15:30
 
-#: Minute-of-hour cadences: every quarter hour when trading, on the hour when not.
-ACTIVE_SLOTS: tuple[int, ...] = tuple(range(0, 60, 15))
+#: Minute-of-hour cadences: every minute when trading, on the hour when not.
+ACTIVE_SLOTS: tuple[int, ...] = tuple(range(60))
 CLOSED_SLOTS: tuple[int, ...] = (0,)
 
 #: Weekend cadence: scrape once every this many hours (at :00), rather than
@@ -50,12 +53,23 @@ def now_wib() -> datetime:
 
 
 def is_active(dt: datetime) -> bool:
-    """True during trading hours: a weekday, 08:00 <= time < 16:00 WIB."""
+    """True during trading hours: a weekday, 08:30 <= time <= 15:30 WIB."""
     ref = dt.astimezone(WIB)
     if ref.weekday() >= 5:  # Saturday, Sunday
         return False
     minutes = ref.hour * 60 + ref.minute
-    return OPEN_MIN <= minutes < CLOSE_MIN
+    return OPEN_MIN <= minutes <= CLOSE_MIN
+
+
+def is_heartbeat(dt: datetime) -> bool:
+    """Whether a slot stores every currency, changed or not.
+
+    Rows are written only when a rate changes, which leaves no way to tell a
+    rate that held still from a scraper that was down. So on the hour — every
+    closed-hours slot, and once an hour while trading — everything is stored
+    regardless. A gap longer than that in the history is then a real outage.
+    """
+    return dt.astimezone(WIB).minute == 0
 
 
 def is_weekend(dt: datetime) -> bool:

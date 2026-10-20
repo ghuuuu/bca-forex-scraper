@@ -1,4 +1,7 @@
-"""SQLite storage. One row per (scrape, currency).
+"""SQLite storage. One row per (scrape, currency) — written only when it says
+something new: a rate changed, or the hourly heartbeat (schedule.is_heartbeat).
+So currencies do not all share the same timestamps, and "the latest" is per
+currency, not one shared MAX(scraped_at).
 
 SQLite because this has to be movable: the whole history is one file you can
 copy to a USB stick, and there is no server to install, secure or keep running
@@ -34,6 +37,15 @@ CREATE TABLE IF NOT EXISTS runs (
     message    TEXT
 );
 """
+
+
+def latest_rows(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    """The newest row of every currency (the index makes this a quick seek each)."""
+    return list(conn.execute(
+        "SELECT r.* FROM rates r JOIN (SELECT currency, MAX(scraped_at) m FROM rates "
+        "GROUP BY currency) x ON r.currency = x.currency AND r.scraped_at = x.m "
+        "ORDER BY r.currency"
+    ))
 
 
 def utc_now_iso() -> str:
@@ -92,12 +104,17 @@ class Store:
     # ---- reads ----------------------------------------------------------
 
     def latest(self) -> list[sqlite3.Row]:
-        return list(
-            self.conn.execute(
-                "SELECT * FROM rates WHERE scraped_at = (SELECT MAX(scraped_at) FROM rates) "
-                "ORDER BY currency"
-            )
-        )
+        """The newest stored row of every currency."""
+        return latest_rows(self.conn)
+
+    def last_values(self) -> dict[str, tuple]:
+        """Each currency's newest stored rates, to tell a change from a repeat."""
+        return {r["currency"]: tuple(r[f] for f in FIELDS) for r in self.latest()}
+
+    def last_ok_run(self) -> str | None:
+        """When the page was last read successfully, stored or not."""
+        row = self.conn.execute("SELECT MAX(started_at) FROM runs WHERE ok = 1").fetchone()
+        return row[0]
 
     def history(self, currency: str, limit: int = 1000) -> list[sqlite3.Row]:
         return list(

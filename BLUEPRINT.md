@@ -2,7 +2,7 @@
 
 The whole system on one page: what it does, how the parts fit, the rules it
 keeps, and what was learned about BCA's rates along the way. Current as of
-**0.5.0 (20 Oct 2026)**.
+**0.6.0 (20 Oct 2026)**.
 
 - [`README.md`](README.md): what the project is, commands, chart features, NAS install.
 - [`SETUP.md`](SETUP.md): the deployed system, what to type, what to do when it breaks.
@@ -33,7 +33,7 @@ each buy and sell, all quoted in IDR.
 ```
             BCA kurs page (HTML)
                     |
-                    |  every slot (15 min / 1 h / 3 h, WIB)
+                    |  every slot (1 min / 1 h / 3 h, WIB)
                     v
   +---------------- bca-forex-scraper (container) ----------------+
   |  fetcher.py --> parser.py --> store.py --> data/*.sqlite3     |
@@ -88,12 +88,17 @@ All Python standard library, 3.11+. Nothing to `pip install`.
 `run` loops forever:
 
 1. Sleep until the next slot (`schedule.next_slot`).
-2. `fetch()` the page. Network failure: up to 3 tries, then log a failed run.
+2. `fetch()` the page, stopping at the end of the rate table (~118 KB of
+   ~370 KB). Network failure: up to 3 tries, then log a failed run.
 3. `parse()` it. No rates matched: `ParseError`, logged as a failed run. This
    is a layout change at BCA, and it fails loudly instead of storing wrong numbers.
-4. `Store.save()` one row per currency, stamped with the UTC time and BCA's
+4. `Store.save()` a row for each currency whose rates differ from its last
+   stored row — or for every currency on the hour (the heartbeat), so a gap
+   in the history always means an outage. Stamped with the UTC time and BCA's
    own "Terakhir diperbarui" stamp. `INSERT OR IGNORE`: re-running is harmless.
-5. `write_api()` rewrites `latest.json` and `history/<CCY>.json`.
+   Every read, stored or not, is logged in `runs`.
+5. If anything was stored: `write_api()` rewrites `latest.json` and
+   `history/<CCY>.json`, and
 6. `build_chart()` rewrites `index.html` (and the PWA files).
 
 Steps 5 and 6 each catch their own errors. A broken chart or API never stops
@@ -104,20 +109,24 @@ scraping. Any unexpected error in a cycle is logged and the loop continues.
 ## 5. Schedule
 
 Computed in fixed UTC+7, so the host clock's timezone cannot move it.
-Indonesia has no daylight saving. Slots are pinned to the clock (:00, :15, …),
-not to process start, so every run lines up row for row.
+Indonesia has no daylight saving. Slots are pinned to the clock (whole
+minutes and hours), not to process start, so every run lines up row for row.
 
 | When (WIB) | Cadence | Why |
 | --- | --- | --- |
-| Mon–Fri 08:00–16:00 | every 15 min | BCA moves rates in this window. |
+| Mon–Fri 08:30–15:30 | every minute | BCA moves rates in this window, and switches the e-Rate tight/wide at a minute we want to pin down. |
 | Mon–Fri other hours | hourly | e-Rate still drifts with global FX (~4 hours in 5 change). |
 | Sat–Sun | every 3 h | e-Rate near-static (~1 hour in 4), counter rates frozen. |
 
 Tune with `OPEN_MIN`, `CLOSE_MIN`, `ACTIVE_SLOTS`, `CLOSED_SLOTS` and
 `WEEKEND_STEP_H` in `schedule.py`.
 
-The scrape window (08:00–16:00) is wider than BCA's tight e-Rate window
-(09:15–15:00, section 8) on purpose, to catch the moves either side.
+The minute window (08:30–15:30) runs half an hour either side of BCA's
+switches (09:00–09:15 and 15:00–15:15, section 8), to catch the exact minute.
+`python -m bca_forex timing` lists, per weekday, the first read that saw the
+e-Rate tight and wide, and when TT / Bank Notes moved, with the median over
+days read every minute. Once that settles, the window can shrink to the
+minutes that matter.
 
 ---
 
@@ -133,8 +142,12 @@ rates (
   page_updated TEXT,  -- BCA's own stamp, e.g. "19 Oktober 2026 15.14 WIB"
   PRIMARY KEY (scraped_at, currency)
 )
-runs (started_at TEXT, ok INTEGER, currencies INTEGER, message TEXT)
+runs (started_at TEXT, ok INTEGER, currencies INTEGER, message TEXT)  -- every read
 ```
+
+- **A row means something changed** (or it is the hourly heartbeat), so
+  currencies do not share timestamps: "latest" is per currency
+  (`store.latest_rows`), never one `MAX(scraped_at)`.
 
 - **`0` means "not offered".** BCA prints `0,00` for Bank Notes in AED, CNH,
   DKK, MYR and SEK. The chart drops it; the API turns it into `null`.
@@ -160,7 +173,9 @@ a USB stick.
 - Motion: line wipe on change, count-up numbers, pulsing live dot, price
   flash on refresh, "Updated N min ago" with a sync spinner. All disabled
   under `prefers-reduced-motion`.
-- Session x-axis: closed hours compress; 1D shades them "Closed".
+- X-axis to scale (real time). Pinch on touch, ctrl+wheel or trackpad pinch
+  on desktop, zooms around the fingers or pointer (down to 30 min); drag pans.
+  Zoomed to three days or less, closed hours are shaded "Closed".
 - Real data gaps (scraper down) show as a grey dotted bridge.
 - Refetches itself after each slot; remembers currency, range and layout.
 - `--pwa` adds manifest, service worker and icons. The service worker is
@@ -172,33 +187,39 @@ Full feature list: README, "The chart".
 
 ### 7.2 JSON API
 
-Static files, rewritten after every scrape by `run --api /web/api/v1`,
+Static files, rewritten after every scrape that stored a row by `run --api /web/api/v1`,
 served by the same web container. No server code, no new port, and the
 database stays unreachable from the tunnel.
 
 | URL | Returns |
 | --- | --- |
-| `/api/v1/latest.json` | newest scrape, every currency |
+| `/api/v1/latest.json` | each currency's newest rates, plus `checked_at` |
 | `/api/v1/history/<CCY>.json` | every stored scrape for one currency, oldest first |
 
 `latest.json`:
 
 ```json
 {
-  "api_version": 1, "app_version": "0.4.0",
+  "api_version": 1, "app_version": "0.6.0",
   "source": "https://www.bca.co.id/id/informasi/kurs",
   "generated": "2026-10-19T15:52:40+00:00",
-  "scraped_at": "2026-10-19T15:52:39+00:00",
+  "checked_at": "2026-10-19T15:52:39+00:00",
+  "scraped_at": "2026-10-19T15:00:02+00:00",
   "page_updated": "19 Oktober 2026 22.52 WIB",
   "trading_hours": false,
   "fields": ["e_rate_buy", "e_rate_sell", "tt_buy", "tt_sell", "bank_notes_buy", "bank_notes_sell"],
   "rates": {
     "USD": { "e_rate_buy": 17990, "e_rate_sell": 18080, "tt_buy": 17850, "tt_sell": 18130,
              "bank_notes_buy": 17820, "bank_notes_sell": 18100,
-             "e_rate_tight": false, "tt_tight": true, "bank_notes_tight": true }
+             "e_rate_tight": false, "tt_tight": true, "bank_notes_tight": true,
+             "scraped_at": "2026-10-19T15:00:02+00:00" }
   }
 }
 ```
+
+`checked_at` is the last time BCA's page was read; each currency's
+`scraped_at` is when its rates last changed (or the last heartbeat), and the
+top-level `scraped_at` the newest of those. Use `checked_at` for staleness.
 
 `history/<CCY>.json` has the same metadata plus `currency`, `columns` and
 `rows`. Rows are arrays (half the bytes of objects):
@@ -215,7 +236,7 @@ Contract rules:
 - **No auth, no CORS.** The chart already publishes the same numbers.
   Server-side callers only. If Cloudflare Access is ever put on
   `forex.<your-domain>`, API callers need a service token or a bypass on `/api/*`.
-- **Staleness:** `scraped_at` older than ~4 hours means the scraper is down.
+- **Staleness:** `checked_at` older than ~4 hours means the scraper is down.
 
 ---
 
@@ -396,6 +417,7 @@ yes, 15:15 no, Saturday no), the tight threshold for both the split
 | 0.3.0 | 19 Oct 2026 | JSON API (`latest.json`, `history/<CCY>.json`); `trading_hours` 09:15–15:00; remote deploy over SSH |
 | 0.4.0 | 19 Oct 2026 | `e_rate_tight`, `tt_tight`, `bank_notes_tight` from one formula, on every history row |
 | 0.5.0 | 20 Oct 2026 | Dashboard redesign: rate cards, Buy/Sell segment, Compare switch, motion and loading states; new BCA wordmark, app icons and favicon |
+| 0.6.0 | 20 Oct 2026 | Every minute 08:30–15:30 on weekdays, stored only on change plus an hourly heartbeat; read stops after the rate table; `timing` report; chart x-axis to scale, pinch / ctrl+wheel zoom; `checked_at` and per-currency `scraped_at` in `latest.json` |
 
 ---
 

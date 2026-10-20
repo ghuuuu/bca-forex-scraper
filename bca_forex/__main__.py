@@ -6,24 +6,28 @@
     export   write the history to CSV
     chart    build a self-contained HTML chart of the history
     status   how much history there is, and whether anything has been failing
+    timing   when BCA switches its e-Rate tight/wide, and moves TT/Bank Notes
 """
 
 from __future__ import annotations
 
 import argparse
+import bisect
 import csv
 import json
+import statistics
 import sys
 import time
 import webbrowser
+from datetime import datetime
 from pathlib import Path
 
 from . import __version__
-from .api import write_api
+from .api import _spread_pct, is_tight, tight_threshold, write_api
 from .chart import build as build_chart
 from .fetcher import URL, FetchError, fetch
 from .parser import FIELDS, ParseError, parse
-from .schedule import next_slot, now_wib, seconds_until_next
+from .schedule import WIB, is_heartbeat, next_slot, now_wib, seconds_until_next
 from .store import Store, utc_now_iso
 
 DEFAULT_DB = Path(__file__).resolve().parent.parent / "data" / "bca-forex.sqlite3"
@@ -45,27 +49,46 @@ def _log(msg: str) -> None:
     print(f"{now_wib():%Y-%m-%d %H:%M:%S} WIB  {msg}", flush=True)
 
 
-def scrape_once(store: Store, html_file: str | None = None) -> int:
-    """Fetch (or read a saved page), parse, store. Returns currencies stored."""
+def scrape_once(
+    store: Store, html_file: str | None = None, heartbeat: bool = True,
+    last: dict[str, tuple] | None = None,
+) -> tuple[int, int]:
+    """Fetch (or read a saved page), parse, store. Returns (currencies read, rows stored).
+
+    A heartbeat stores every currency. Otherwise only the currencies whose
+    rates differ from `last` (each one's newest stored values, kept up to date
+    here) are written — most minutes in trading hours change nothing, and a
+    row that repeats the one before it says nothing the chart does not already
+    show.
+    """
     try:
         html = Path(html_file).read_text(encoding="utf-8") if html_file else fetch()
         pull = parse(html)
     except (FetchError, ParseError) as e:
         store.log_run(False, 0, str(e))
         _log(f"FAILED: {e}")
-        return 0
-    written = store.save(pull.rates.values(), utc_now_iso(), pull.page_updated)
+        return 0, 0
+    if last is None:
+        last = store.last_values()
+    rows = [
+        r for r in pull.rates.values()
+        if heartbeat or last.get(r.code) != tuple(getattr(r, f) for f in FIELDS)
+    ]
+    written = store.save(rows, utc_now_iso(), pull.page_updated) if rows else 0
+    for r in rows:
+        last[r.code] = tuple(getattr(r, f) for f in FIELDS)
     store.log_run(True, len(pull.rates))
-    _log(
-        f"stored {written} row(s) for {len(pull.rates)} currencies"
-        + (f" | page says: {pull.page_updated}" if pull.page_updated else "")
-    )
-    return len(pull.rates)
+    if heartbeat:
+        _log(f"stored {written} row(s) for {len(pull.rates)} currencies (heartbeat)"
+             + (f" | page says: {pull.page_updated}" if pull.page_updated else ""))
+    elif written:
+        _log(f"changed: {' '.join(r.code for r in rows)}")
+    return len(pull.rates), written
 
 
 def cmd_once(args: argparse.Namespace) -> int:
     with Store(args.db) as store:
-        return 0 if scrape_once(store, args.html) else 1
+        return 0 if scrape_once(store, args.html)[0] else 1
 
 
 def _refresh_chart(store: Store, args: argparse.Namespace) -> None:
@@ -91,18 +114,24 @@ def _refresh_chart(store: Store, args: argparse.Namespace) -> None:
 
 
 def cmd_run(args: argparse.Namespace) -> int:
-    _log(f"BCA Forex Scraper {__version__} — 15 min trading hours, hourly weeknights, 3 h weekends WIB, db {args.db}")
+    _log(f"BCA Forex Scraper {__version__} — every minute 08:30-15:30 weekdays (stored on change, "
+         f"heartbeat hourly), hourly weeknights, 3 h weekends WIB, db {args.db}")
     if args.chart:
         _log(f"chart refreshed after each scrape -> {args.chart}")
     if args.api:
         _log(f"JSON API refreshed after each scrape -> {args.api}")
     with Store(args.db) as store:
+        last = store.last_values()
         if not args.no_initial:
-            scrape_once(store)
+            scrape_once(store, last=last)
             _refresh_chart(store, args)
         while True:
+            slot = next_slot()
             wait = seconds_until_next()
-            _log(f"next scrape {next_slot():%H:%M} WIB (in {wait / 60:.1f} min)")
+            # Every minute in trading hours would bury the log; say it only
+            # before the long waits.
+            if wait > 120:
+                _log(f"next scrape {slot:%H:%M} WIB (in {wait / 60:.1f} min)")
             try:
                 time.sleep(wait)
             except KeyboardInterrupt:
@@ -111,8 +140,10 @@ def cmd_run(args: argparse.Namespace) -> int:
             # never let one bad scrape kill the service — the whole point of
             # this process is that it is still running tomorrow
             try:
-                scrape_once(store)
-                _refresh_chart(store, args)
+                # Rebuild the chart and API only when a row went in: the page
+                # is ~3 MB, and a minute with no change has nothing to add.
+                if scrape_once(store, heartbeat=is_heartbeat(slot), last=last)[1]:
+                    _refresh_chart(store, args)
             except Exception as e:  # noqa: BLE001
                 store.log_run(False, 0, f"unexpected: {e}")
                 _log(f"UNEXPECTED ERROR (continuing): {e}")
@@ -133,7 +164,8 @@ def cmd_latest(args: argparse.Namespace) -> int:
                 f"{(f'{r[f]:,.2f}' if r[f] is not None else '-'):>17}" for f in FIELDS
             )
             print(f"{r['currency']:<5}{vals}")
-        print(f"\nas of {rows[0]['scraped_at']} (UTC) | page: {rows[0]['page_updated'] or '-'}")
+        newest = max(rows, key=lambda r: r["scraped_at"])
+        print(f"\nlast change {newest['scraped_at']} (UTC) | checked {store.last_ok_run() or '-'} (UTC)")
     return 0
 
 
@@ -175,6 +207,82 @@ def cmd_chart(args: argparse.Namespace) -> int:
     _log(f"wrote {out} — {currencies} currencies, {points} points")
     if args.open:
         webbrowser.open(out.resolve().as_uri())
+    return 0
+
+
+def cmd_timing(args: argparse.Namespace) -> int:
+    """When BCA actually switches its e-Rate between the wide and the tight
+    quote each weekday, and when it moves its TT and Bank Notes rates.
+
+    Each time is the first read that saw the new state. How far it can be off
+    is the gap back to the read before it (the `runs` table logs every read,
+    stored or not): about a minute in trading hours since 0.6.0, up to fifteen
+    on older days. Only days read every minute or two go into the summary.
+    """
+    code = args.currency.upper()
+    with Store(args.db) as store:
+        conn = store.conn
+        rows = conn.execute(
+            f"SELECT scraped_at, {', '.join(FIELDS)} FROM rates WHERE currency = ? ORDER BY scraped_at",
+            (code,),
+        ).fetchall()
+        runs = [r[0] for r in conn.execute("SELECT started_at FROM runs WHERE ok = 1 ORDER BY started_at")]
+    if not rows:
+        _log(f"no rows for {code}")
+        return 1
+    thr = tight_threshold([(r["scraped_at"], _spread_pct(r["e_rate_buy"], r["e_rate_sell"])) for r in rows])
+    if thr is None:
+        _log(f"not enough history for {code} to tell tight from wide yet")
+        return 1
+
+    def slack(ts: str) -> float:
+        """Minutes back to the read before this one."""
+        i = bisect.bisect_left(runs, ts)
+        if i == 0:
+            return float("inf")
+        return (datetime.fromisoformat(ts) - datetime.fromisoformat(runs[i - 1])).total_seconds() / 60
+
+    days: dict[str, list] = {}
+    for r in rows:
+        t = datetime.fromisoformat(r["scraped_at"]).astimezone(WIB)
+        if t.weekday() < 5:
+            days.setdefault(t.date().isoformat(), []).append((t, r))
+    days = dict(list(days.items())[-args.days:])
+
+    print(f"{code}, times WIB: first read that saw it (± minutes back to the read before)\n")
+    print(f"{'day':<12}{'tight from':<16}{'wide from':<16}TT / Bank Notes moved")
+    found: dict[str, list[int]] = {"tight": [], "wide": []}
+    for day, items in days.items():
+        cells = {}
+        prev = None
+        for t, r in items:
+            tight = is_tight(thr, r["e_rate_buy"], r["e_rate_sell"])
+            if prev is not None and tight is not None and tight != prev:
+                key = "tight" if tight else "wide"
+                if key not in cells:     # the first switch each way that day
+                    s = slack(r["scraped_at"])
+                    cells[key] = f"{t:%H:%M} (±{s:.0f})" if s < 1e9 else f"{t:%H:%M}"
+                    if s <= 2:
+                        found[key].append(t.hour * 60 + t.minute)
+            if tight is not None:
+                prev = tight
+        moved, before = [], None
+        for t, r in items:
+            counter = (r["tt_buy"], r["tt_sell"], r["bank_notes_buy"], r["bank_notes_sell"])
+            if before is not None and counter != before:
+                moved.append(f"{t:%H:%M}")
+            before = counter
+        print(f"{day:<12}{cells.get('tight', '-'):<16}{cells.get('wide', '-'):<16}{', '.join(moved) or '-'}")
+
+    print()
+    for key, label in (("tight", "Tight from"), ("wide", "Wide from")):
+        mins = found[key]
+        if not mins:
+            print(f"{label}: no days read every minute yet")
+            continue
+        hm = lambda m: f"{int(m) // 60:02d}:{int(m) % 60:02d}"
+        print(f"{label}: earliest {hm(min(mins))}, median {hm(statistics.median(mins))}, "
+              f"latest {hm(max(mins))}  ({len(mins)} days at 1-2 min resolution)")
     return 0
 
 
@@ -231,6 +339,11 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("--pwa", action="store_true", help="also write manifest, service worker and icons (needs HTTPS to install)")
     c.add_argument("--open", action="store_true", help="open it in the browser when done")
     c.set_defaults(func=cmd_chart)
+
+    tm = sub.add_parser("timing", help="when BCA switches its e-Rate tight/wide each weekday")
+    tm.add_argument("--currency", default="USD")
+    tm.add_argument("--days", type=int, default=30, help="most recent N weekdays (default: 30)")
+    tm.set_defaults(func=cmd_timing)
 
     s = sub.add_parser("status", help="history size and failure count")
     s.set_defaults(func=cmd_status)

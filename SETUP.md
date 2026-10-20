@@ -148,7 +148,10 @@ sudo docker exec bca-forex-scraper python -m bca_forex --db /data/bca-forex.sqli
 sudo docker restart bca-forex-scraper
 ```
 
-The full command set is `once`, `run`, `latest`, `export`, `chart`, `status`.
+# when does BCA really switch its e-Rate tight / wide? (per weekday + median)
+sudo docker exec bca-forex-scraper python -m bca_forex --db /data/bca-forex.sqlite3 timing
+
+The full command set is `once`, `run`, `latest`, `export`, `chart`, `status`, `timing`.
 Every one takes `--db`.
 
 ---
@@ -157,7 +160,9 @@ Every one takes `--db`.
 
 Three cadences, Indonesian time:
 
-- **Trading hours (Mon–Fri 08:00–16:00 WIB):** every 15 minutes.
+- **Trading hours (Mon–Fri 08:30–15:30 WIB):** every minute, to catch the
+  exact minute BCA switches its e-Rate between the wide and tight quote
+  (somewhere in 09:00–09:15 and 15:00–15:15). `timing` reports it.
 - **Weeknights (Mon–Fri, after 16:00 and before 08:00):** once an hour. The
   live e-Rate keeps drifting with global FX overnight (~4 hours in 5 move), so
   hourly is worth it; 16:00 lands as the first hourly slot, capturing the close.
@@ -176,8 +181,8 @@ To change the window or cadence, edit the constants at the top of
 `WEEKEND_STEP_H` — and everything else follows:
 
 ```python
-OPEN_MIN, CLOSE_MIN = 8 * 60, 16 * 60
-ACTIVE_SLOTS = tuple(range(0, 60, 15))   # trading hours: every 15 min
+OPEN_MIN, CLOSE_MIN = 8 * 60 + 30, 15 * 60 + 30
+ACTIVE_SLOTS = tuple(range(60))          # trading hours: every minute
 CLOSED_SLOTS = (0,)                      # weeknights: hourly
 WEEKEND_STEP_H = 3                       # weekends: every 3 hours
 ```
@@ -221,13 +226,15 @@ the tunnel: `http://bca-forex-web:8080/api/v1/latest.json`.
 ```json
 {
   "api_version": 1,
-  "scraped_at": "2026-10-19T08:15:00+00:00",
+  "checked_at": "2026-10-19T08:15:00+00:00",
+  "scraped_at": "2026-10-19T08:14:00+00:00",
   "page_updated": "19 Oktober 2026 15.14 WIB",
   "trading_hours": true,
   "rates": {
     "USD": { "e_rate_buy": 18034, "e_rate_sell": 18060, "tt_buy": 17820,
              "tt_sell": 18100, "bank_notes_buy": 17900, "bank_notes_sell": 18200,
-             "e_rate_tight": true, "tt_tight": true, "bank_notes_tight": true }
+             "e_rate_tight": true, "tt_tight": true, "bank_notes_tight": true,
+             "scraped_at": "2026-10-19T08:14:00+00:00" }
   }
 }
 ```
@@ -271,9 +278,13 @@ small. Since 0.4.0 they end with the three `_tight` flags.
   exposes nothing new. If a Cloudflare Access policy is ever added to
   `forex.<your-domain>`, server-to-server callers need a service token, or a bypass
   rule on `/api/*`.
-- **No rate on a weekend or holiday is not a thing here.** BCA's e-Rate is live
-  every day; `latest.json` is always the newest scrape. Check `scraped_at`:
-  older than ~4 hours means the scraper is down, not that the market is shut.
+- **Rows are stored only when a rate changes** (plus an hourly heartbeat), so
+  each currency has its own `scraped_at`: when its rates last changed. The
+  top-level `scraped_at` is the newest of those, and `checked_at` is the last
+  time BCA's page was read at all. The rates were still current at
+  `checked_at`.
+- **Staleness: check `checked_at`.** Older than ~4 hours means the scraper is
+  down, not that the market is shut — BCA's e-Rate is live every day.
 - **`trading_hours` matters for the e-Rate.** It is `true` for a scrape taken
   on a weekday **09:15–15:00 WIB**, inclusive — when BCA quotes the e-Rate tight
   (a 20–26 IDR spread). BCA tightens between 09:00 and 09:15 and widens between
