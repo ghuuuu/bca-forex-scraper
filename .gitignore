@@ -31,3 +31,9 @@ __pycache__/
 # "fatal: bad object refs/heads/@eaDir/main@SynoEAStream".
 @eaDir/
 *@SynoEAStream
+
+# Local editor and assistant metadata
+.claude/settings.local.json
+.claude/.headroom*
+.serena/
+

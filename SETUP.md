@@ -24,8 +24,8 @@ Update it by running one script on the NAS.
 
 | | |
 | --- | --- |
-| Repo | `github.com/ghuuuu/bca-forex-scraper` (**private**) |
-| NAS folder | `/volume1/docker/BCA-Forex-Scraper` |
+| Repo | `github.com/<your-username>/bca-forex-scraper` |
+| NAS folder | `/volume1/docker/bca-forex-scraper` |
 | NAS LAN address | `<nas-lan-ip>` |
 | Database | `<nas folder>/data/bca-forex.sqlite3` |
 | Served files | `<nas folder>/web/` |
@@ -104,7 +104,7 @@ demands a login every few hours feels broken.
 ## Updating it
 
 ```bash
-cd /volume1/docker/BCA-Forex-Scraper && sudo ./deploy.sh
+cd /volume1/docker/bca-forex-scraper && sudo ./deploy.sh
 ```
 
 That pulls, rebuilds, restarts, clears dangling layers, and prints the container
@@ -208,14 +208,14 @@ cannot be reconstructed after the fact, so it is what to back up. Roughly 1 MB
 per year.
 
 ```bash
-sudo cp /volume1/docker/BCA-Forex-Scraper/data/bca-forex.sqlite3 /volume1/backup/
+sudo cp /volume1/docker/bca-forex-scraper/data/bca-forex.sqlite3 /volume1/backup/
 ```
 
 ---
 
 ## The JSON API
 
-For other apps — downstream services's quotation FX rate first. Static files the scraper
+For other apps — downstream services (e.g. quotation / pricing tools). Static files the scraper
 rewrites after every scrape (`run --api /web/api/v1`), served by the same
 `bca-forex-web` container, so there is nothing extra to run.
 
@@ -357,7 +357,7 @@ folders inside `.git/`. Only happens if something copies into the folder over
 SMB:
 
 ```bash
-sudo find /volume1/docker/BCA-Forex-Scraper -name '@eaDir' -prune -exec rm -rf {} +
+sudo find /volume1/docker/bca-forex-scraper -name '@eaDir' -prune -exec rm -rf {} +
 ```
 
 **The scraper is up but nothing is being stored.** BCA changed their page

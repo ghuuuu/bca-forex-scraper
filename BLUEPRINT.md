@@ -20,7 +20,7 @@ history three ways:
 | Output | For | Where |
 | --- | --- | --- |
 | Chart page (installable PWA) | people | `https://forex.<your-domain>` |
-| JSON API | other apps (downstream services first) | `https://forex.<your-domain>/api/v1/` |
+| JSON API | downstream services | `https://forex.<your-domain>/api/v1/` |
 | SQLite file, CSV export | analysis, backup | `data/bca-forex.sqlite3` on the NAS |
 
 18 currencies, 6 rates each: **e-Rate**, **TT Counter** and **Bank Notes**,
@@ -51,10 +51,10 @@ each buy and sell, all quoted in IDR.
                     |
         +-----------+-------------------------------+
         |                                           |
-  LAN  http://<nas-lan-ip>:7000      Cloudflare Tunnel "nas-tunnel"
+  LAN  http://<nas-lan-ip>:7000      Cloudflare Tunnel "<tunnel-name>"
                                        https://forex.<your-domain>
                                                     |
-                                    phones (PWA), downstream services, other apps
+                                    phones (PWA), downstream apps
 ```
 
 Two containers, one image. The split is deliberate: if the web server dies,
@@ -312,25 +312,16 @@ Knobs: `CALIBRATION_MIN_ROWS = 50`, `TIGHT_TOLERANCE = 1.2`,
 
 ## 9. Consumers
 
-### downstream services (quotation FX rate)
+### Quotation / Pricing FX consumers (e.g. ERP, costing tools)
 
-Not wired yet. downstream services (`C:\Projects\downstream-app`, Next.js + Prisma) gets its
-rate from `fetchMarketRate()` in `app/api/cron/update-exchange-rates/route.ts`,
-currently `open.er-api.com`, on a daily cron at 09:00 WIB. It adds a buffer:
-`bufferedRate = market ÷ (1 − buffer)`. Its `docs/decisions/OPEN-QUESTIONS.md`
-item 1 is this API's contract.
+Recommended integration pattern for any downstream consumer locking an FX rate:
 
-Recommended integration, for when it is approved there:
-
-1. Read `https://forex.<your-domain>/api/v1/latest.json` in `fetchMarketRate()`.
+1. Read `https://forex.<your-domain>/api/v1/latest.json` in your exchange rate worker.
 2. Use `rates.USD.e_rate_sell` **only when `rates.USD.e_rate_tight` is `true`**.
-   Otherwise keep the previous locked rate.
-3. Move the cron from 09:00 to **09:30 WIB** (`30 2 * * *` UTC). At 09:00
+   Otherwise retain the previous locked rate.
+3. Schedule the rate-locking task for **09:30 WIB** (or later, e.g. `30 2 * * *` UTC). At 09:00
    BCA is still quoting wide.
-4. Check `scraped_at` for staleness.
-
-downstream services's own rules apply: ask before changing pricing logic, update its
-`docs/design/*.md` and `DECISIONS.md`.
+4. Check `checked_at` and `scraped_at` for staleness.
 
 ### Others
 
@@ -345,10 +336,10 @@ that shares a network with `bca-forex-web`, skip the tunnel:
 | | |
 | --- | --- |
 | Host | Synology NAS (x86_64) |
-| Folder | `/volume1/docker/BCA-Forex-Scraper` (git checkout of `ghuuuu/bca-forex-scraper`, private) |
+| Folder | `/volume1/docker/bca-forex-scraper` (git checkout of `<your-username>/bca-forex-scraper`) |
 | Containers | `bca-forex-scraper` (no ports), `bca-forex-web` (`7000` → `8080`) |
-| Public | Cloudflare Tunnel `nas-tunnel` → `http://bca-forex-web:8080`, hostname `forex.<your-domain>` |
-| Tunnel network | `bca-forex-web` joins `edge` (`EDGE_NETWORK`), where cloudflared lives |
+| Public | Cloudflare Tunnel `<tunnel-name>` → `http://bca-forex-web:8080`, hostname `forex.<your-domain>` |
+| Tunnel network | `bca-forex-web` joins the shared reverse proxy network (`EDGE_NETWORK`), where cloudflared lives |
 | LAN | `http://<nas-lan-ip>:7000` |
 
 **Deploy flow:** commit and push to `main`, then on the NAS run
@@ -361,12 +352,12 @@ prints container state and the log tail. The rebuild matters: the image copies
 over Tailscale:
 
 ```powershell
-ssh ghuuuu@<nas-tailscale-ip> 'cd /volume1/docker/BCA-Forex-Scraper && sudo -n ./deploy.sh'
+ssh user@<nas-tailscale-ip> 'cd /volume1/docker/bca-forex-scraper && sudo -n ./deploy.sh'
 ```
 
 - Use Windows OpenSSH (`C:\Windows\System32\OpenSSH\ssh.exe`). Git Bash's
   `ssh` cannot reach the Windows agent, and the key has a passphrase.
-- A sudoers rule lets `ghuuuu` run only `deploy.sh` without a password.
+- A sudoers rule lets the deploy user run only `deploy.sh` without a password.
   **Security note:** `deploy.sh` runs whatever is on GitHub `main` as root on
   the NAS. Whoever can push to `main` can run code as root there.
 - `deploy.sh` adds `/usr/local/bin` to `PATH`, because a non-interactive SSH
@@ -402,7 +393,7 @@ folders, the mode-only diff) are in README and SETUP.
 python -m unittest discover -s tests -v
 ```
 
-57 tests. They cover the parser against a saved real page (Indonesian number
+69 tests. They cover the parser against a saved real page (Indonesian number
 format, sell ≥ buy, plausible USD), schedule slot maths, chart payload and
 zero handling, and the API: newest-only `latest.json`, `null` for zero,
 history order and columns, trading-hours edges (09:00 no, 09:15 yes, 15:00
@@ -451,4 +442,3 @@ yes, 15:15 no, Saturday no), the tight threshold for both the split
   headers (a small proxy or a different server) if one ever needs to.
 - **No Cloudflare Access policy** on `forex.<your-domain>` yet. Adding one needs
   the API carve-out in 7.2.
-- **downstream services integration** is planned, not built (section 9).

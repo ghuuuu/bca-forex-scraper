@@ -1,6 +1,6 @@
 """A read-only JSON API, written as static files beside the chart.
 
-Other apps — downstream services's quotation FX rate first — read rates from here instead
+Other apps read rates from here instead
 of scraping the chart page or touching the database:
 
     GET /api/v1/latest.json        each currency's newest rates, six each

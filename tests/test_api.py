@@ -1,4 +1,4 @@
-"""The JSON API — the contract other apps (downstream services) price against."""
+"""The JSON API — the contract downstream apps price against."""
 
 from __future__ import annotations
 

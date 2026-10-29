@@ -26,7 +26,7 @@ services:
       - ./web:/web       # only the rendered chart goes here
     # Written as index.html so the bare host:port URL opens it. --pwa adds the
     # manifest, service worker and icons beside it. --api writes the JSON API
-    # other apps read (downstream services's FX rate): /api/v1/latest.json and
+    # other apps read (downstream quotation FX rates): /api/v1/latest.json and
     # /api/v1/history/<CCY>.json.
     command: ["run", "--chart", "/web/index.html", "--pwa", "--api", "/web/api/v1"]
 

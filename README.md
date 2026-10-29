@@ -4,7 +4,7 @@ Collects Bank Central Asia's published exchange rates
 (<https://www.bca.co.id/id/informasi/kurs>) into a local SQLite file, on a
 schedule, unattended.
 
-**Standalone.** Nothing here imports from the downstream tools, and there is
+**Standalone.** Nothing here imports from external projects, and there is
 nothing to `pip install` — Python's standard library only. Move this folder
 anywhere with Python 3.11+ and it runs.
 
@@ -469,8 +469,8 @@ unchanged.
 ## Which rate should I use?
 
 For **buying** imported goods, the relevant one is **e-Rate sell** — what it
-costs you to acquire the currency. That is the one downstream costing tools re-base their
-prices from.
+costs you to acquire the currency. That is the one downstream costing tools
+re-base their prices from.
 
 ## When BCA changes the page
 
@@ -490,7 +490,7 @@ If that happens, save the page and check the attribute names against
 python -m unittest discover -s tests -v
 ```
 
-65 tests, run against a real page saved in `tests/fixtures/`. Beyond parsing,
+69 tests, run against a real page saved in `tests/fixtures/`. Beyond parsing,
 they check the things that would be expensive to get wrong and easy to miss:
 that `17.980,00` reads as 17 980 and not 17.98 (Indonesian decimal separators
 are the reverse of English), that sell is never below buy (which would mean the
